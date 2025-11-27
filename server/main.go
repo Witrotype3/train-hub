@@ -158,7 +158,11 @@ func main() {
 	))
 
 	// Start the server
-	port := ":8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000" // Default to 3000 for production
+	}
+	port = ":" + port
 	log.Printf("Server running on http://localhost%s", port)
 	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatal(err)
