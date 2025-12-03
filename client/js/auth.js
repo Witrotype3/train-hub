@@ -50,7 +50,12 @@ export async function getUserData(email){
   if(!key) return null
   try{
     const res = await apiGet('/user', {email: key})
-    if(res && res.ok) return {name: res.user.name, email: res.user.email, inventory: res.user.inventory || []}
+    if(res && res.ok) return {
+      name: res.user.name,
+      email: res.user.email,
+      inventory: res.user.inventory || [],
+      deleted_inventory: res.user.deleted_inventory || []
+    }
     return null
   }catch(e){
     console.error('getUserData error', e)
@@ -62,7 +67,10 @@ export async function saveUserData(user){
   const key = (user && user.email) || ''
   if(!key) return {ok:false}
   try{
-    const res = await apiPost('/user', {email:key, inventory:user.inventory || []})
+    const payload = {email:key}
+    if(user.inventory !== undefined) payload.inventory = user.inventory || []
+    if(user.deleted_inventory !== undefined) payload.deleted_inventory = user.deleted_inventory || []
+    const res = await apiPost('/user', payload)
     return res
   }catch(e){
     console.error('saveUserData error', e)

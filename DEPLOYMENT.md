@@ -2,7 +2,25 @@
 
 ## Running on Linux Server
 
-### After cloning the repository:
+### First Time Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/Witrotype3/train-hub.git
+   cd train-hub/server
+   ```
+
+### Updating Existing Deployment
+
+If the repository already exists, pull the latest changes:
+
+```bash
+cd ~/train-hub
+git pull origin master
+cd server
+```
+
+### Building and Running
 
 1. **Navigate to the server directory:**
    ```bash
@@ -37,6 +55,11 @@ To run the server in the background and keep it running after you disconnect:
 1. **Using nohup:**
    ```bash
    nohup ./train-hub > server.log 2>&1 &
+   ```
+   
+   To stop it later:
+   ```bash
+   pkill -f train-hub
    ```
 
 2. **Using screen:**
@@ -76,9 +99,14 @@ To run the server in the background and keep it running after you disconnect:
 
 - **"Permission denied"**: Run `chmod +x train-hub` to make it executable
 - **"go: no go files listed"**: Make sure you're using `go run .` (with the dot) not just `go run`
-- **Port already in use**: Change the port in `main.go` or kill the process using port 8080:
+- **Port already in use**: Kill the process using port 3000:
   ```bash
-  lsof -ti:8080 | xargs kill -9
+  lsof -ti:3000 | xargs kill -9
+  ```
+- **Repository already exists**: Use `git pull` instead of `git clone`:
+  ```bash
+  cd ~/train-hub
+  git pull origin master
   ```
 
 ### Accessing the Application
@@ -115,3 +143,15 @@ server {
 }
 ```
 
+### Quick Update Workflow
+
+When you push new changes and want to update the server:
+
+```bash
+cd ~/train-hub
+git pull origin master
+cd server
+go build .
+pkill -f train-hub  # Stop old instance
+nohup ./train-hub > server.log 2>&1 &  # Start new instance
+```

@@ -6,9 +6,10 @@ const routes = [
   {path:'#/login', render: views.renderLogin},
   {path:'#/signup', render: views.renderSignup},
   {path:'#/inventory', render: views.renderInventory},
-  {path:'#/training', render: views.renderTraining},
+  {path:'#/recycling-bin', render: views.renderRecyclingBin},
   {path:'#/training/modules', render: views.renderTrainingModules},
-  {path:'#/training/videos', render: views.renderVideos}
+  {path:'#/training/videos', render: views.renderVideos},
+  {path:'#/training', render: views.renderTraining}
 ]
 
 const appEl = document.getElementById('app')
@@ -30,6 +31,10 @@ function renderNav(){
     a2.href = '#/training'
     a2.textContent = 'Training'
     navEl.appendChild(a2)
+    const a3 = document.createElement('a')
+    a3.href = '#/recycling-bin'
+    a3.textContent = '🗑️ Recycling Bin'
+    navEl.appendChild(a3)
     const span = document.createElement('span')
     span.textContent = '  ' + (user.name || user.email)
     span.className = 'muted'
@@ -55,10 +60,17 @@ function renderNav(){
 
 function findRoute(hash){
   if(!hash) hash = '#/'
-  const r = routes.find(r=> r.path === hash)
-  // fallback to prefix match
-  if(!r) return routes.find(r=> hash.startsWith(r.path)) || routes[0]
-  return r
+  // Try exact match first
+  const exactMatch = routes.find(r=> r.path === hash)
+  if(exactMatch) return exactMatch
+  
+  // For prefix matching, check longer paths first to avoid matching shorter ones
+  const sortedRoutes = [...routes].sort((a, b) => b.path.length - a.path.length)
+  const prefixMatch = sortedRoutes.find(r=> hash.startsWith(r.path))
+  if(prefixMatch) return prefixMatch
+  
+  // Fallback to home
+  return routes[0]
 }
 
 async function onRoute(){

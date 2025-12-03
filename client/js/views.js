@@ -30,6 +30,43 @@ function showToast(message, type='error', timeout=3500){
   setTimeout(()=>{ t.remove() }, timeout)
 }
 
+/**
+ * Sets up Enter key navigation for a form
+ * Pressing Enter moves to the next input or submits if it's the last input
+ * @param {string} formSelector - CSS selector for the form container
+ * @param {Function} onSubmit - Function to call when Enter is pressed on the last input
+ */
+function setupEnterKeyNavigation(formSelector, onSubmit) {
+  // Wait for DOM to be ready
+  setTimeout(() => {
+    const form = document.querySelector(formSelector)
+    if (!form) return
+    
+    const inputs = form.querySelectorAll('input, textarea, select')
+    const submitButton = form.querySelector('button[class*="primary"], button[type="submit"]')
+    
+    inputs.forEach((input, index) => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          
+          if (index < inputs.length - 1) {
+            // Move to next input
+            inputs[index + 1].focus()
+          } else {
+            // Last input - submit the form
+            if (submitButton) {
+              submitButton.click()
+            } else if (onSubmit) {
+              onSubmit()
+            }
+          }
+        }
+      })
+    })
+  }, 0)
+}
+
 export function renderHome(appEl){
   const user = auth.getCurrentUser()
   if(!user){ 
@@ -117,6 +154,9 @@ export function renderLogin(appEl){
     showToast('Signed in successfully', 'success')
     location.hash = '#/'
   }
+  
+  // Setup Enter key navigation
+  setupEnterKeyNavigation('.login-card', onLogin)
 }
 
 export function renderSignup(appEl){
@@ -170,13 +210,16 @@ export function renderSignup(appEl){
     showToast('Account created successfully!', 'success')
     location.hash = '#/'
   }
+  
+  // Setup Enter key navigation
+  setupEnterKeyNavigation('.signup-card', onSignup)
 }
 
 export async function renderInventory(appEl){
   const user = auth.getCurrentUser()
   if(!user){ location.hash = '#/login'; return }
   appEl.innerHTML = ''
-  const data = (await auth.getUserData(user.email)) || {inventory:[]}
+  const data = (await auth.getUserData(user.email)) || {inventory:[], deleted_inventory:[]}
 
   const header = el('div',{class:'inventory-header'},
     el('div',{},
@@ -185,7 +228,17 @@ export async function renderInventory(appEl){
     )
   )
 
-  const left = el('div',{class:'inventory-list-section'},
+  // Create form section - placed right above the inventory list
+  const createForm = el('div',{class:'card',style:'margin-bottom:2rem;'},
+    el('div',{style:'display:flex;align-items:center;gap:1rem;flex-wrap:wrap;'},
+      el('div',{style:'flex:1;min-width:200px;'},
+        el('input',{id:'new-item',placeholder:'Enter item name (e.g., Laptop, Training Manual, etc.)',type:'text',style:'width:100%;padding:0.75rem;font-size:1rem;border:2px solid #e2e8f0;border-radius:8px;'})
+      ),
+      el('button',{class:'btn btn-large primary',onClick:addItem,style:'white-space:nowrap;'},'➕ Add Item')
+    )
+  )
+
+  const inventoryList = el('div',{class:'inventory-list-section'},
     el('div',{class:'section-header'},
       el('h2',{},'Items'),
       data.inventory && data.inventory.length > 0 
@@ -203,26 +256,13 @@ export async function renderInventory(appEl){
         )
       : el('div',{class:'empty-state'},
           el('span',{class:'empty-icon'},'📋'),
-          el('p',{class:'muted'},'Your inventory is empty. Add your first item below!')
+          el('p',{class:'muted'},'Your inventory is empty. Add your first item above!')
         )
   )
 
-  const right = el('div',{class:'add-item-section'},
-    el('div',{class:'card'},
-      el('h3',{},'Add New Item'),
-      el('p',{class:'muted small'},'Enter the name of the item you want to add to your inventory'),
-      el('div',{class:'form-row'}, 
-        el('input',{id:'new-item',placeholder:'e.g., Laptop, Training Manual, etc.',type:'text'})
-      ),
-      el('div',{class:'actions'}, 
-        el('button',{class:'btn btn-large primary', onClick:addItem},'Add Item')
-      )
-    )
-  )
-
-  const container = el('div',{class:'two-cols'}, left, right)
   appEl.appendChild(header)
-  appEl.appendChild(container)
+  appEl.appendChild(createForm)
+  appEl.appendChild(inventoryList)
 
   async function addItem(){
     const v = document.getElementById('new-item').value.trim()
@@ -247,14 +287,38 @@ export async function renderInventory(appEl){
       return
     }
     document.getElementById('new-item').value = ''
+    document.getElementById('new-item').focus() // Keep focus on input for quick adding
     showToast('Item added successfully', 'success')
   }
+  
+  // Setup Enter key to submit the form
+  setTimeout(() => {
+    const input = document.getElementById('new-item')
+    if (input) {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          addItem()
+        }
+      })
+      // Auto-focus the input for quick entry
+      input.focus()
+    }
+  }, 0)
 
   async function removeItem(idx){
-    if(!confirm('Are you sure you want to remove this item?')) return
+    const item = data.inventory[idx]
+    // Move to deleted inventory
+    data.deleted_inventory = data.deleted_inventory || []
+    data.deleted_inventory.push(item)
     data.inventory.splice(idx, 1)
-    await auth.saveUserData({name:user.name, email:user.email, inventory:data.inventory})
-    showToast('Item removed', 'success')
+    await auth.saveUserData({
+      name: user.name,
+      email: user.email,
+      inventory: data.inventory,
+      deleted_inventory: data.deleted_inventory
+    })
+    showToast('Item moved to recycling bin', 'success')
     renderInventory(appEl)
   }
 }
@@ -290,26 +354,19 @@ export async function renderTraining(appEl){
   }
   
   const trainingsGrid = el('div',{class:'trainings-grid'},
-    ...trainings.map(t => el('div',{class:'card training-item-card'},
-      el('div',{class:'training-item-header'},
-        el('div',{class:'training-item-icon'},'🎓'),
-        el('div',{class:'training-item-info',style:'flex:1;'},
-          el('h3',{},t.title),
-          el('p',{class:'muted small'},t.description || 'No description')
-        ),
-        t.created_by === user.email ? el('button',{class:'btn-remove', onClick:()=> deleteTrainingItem(t.id)},'×') : null
-      ),
-      el('div',{class:'training-item-content'},
-        t.video_url ? el('div',{class:'training-video-preview'},
-          el('video',{src:t.video_url, controls:true, style:'width:100%;max-height:200px;border-radius:8px;'})
-        ) : null,
-        t.content ? el('div',{class:'training-text-preview',style:'margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:8px;max-height:150px;overflow-y:auto;'},
-          el('p',{style:'white-space:pre-wrap;'},t.content.substring(0, 200) + (t.content.length > 200 ? '...' : ''))
-        ) : null
-      ),
-      el('div',{class:'training-item-footer'},
-        el('span',{class:'muted small'},`Created by ${t.created_by}`),
-        el('button',{class:'btn primary', onClick:()=> viewTraining(t.id)},'View Training')
+    ...trainings.map(t => el('div',{class:'card training-item-card', onClick:()=> viewTraining(t.id), style:'cursor:pointer;'},
+      t.thumbnail_url ? el('img',{src:t.thumbnail_url, style:'width:100%;max-height:250px;object-fit:cover;border-radius:12px 12px 0 0;margin:-1rem -1rem 1rem -1rem;display:block;'}) : null,
+      el('div',{class:'training-item-content',style:'padding:0;'},
+        el('h3',{style:'margin:0 0 0.5rem 0;'},t.title),
+        el('p',{class:'muted',style:'margin:0 0 1rem 0;'},t.description || 'No description'),
+        el('div',{class:'training-item-footer',style:'display:flex;justify-content:space-between;align-items:center;padding-top:1rem;border-top:1px solid var(--border-light);margin-top:1rem;'},
+          el('div',{style:'display:flex;align-items:center;gap:0.5rem;'},
+            // Placeholder for future profile image
+            // el('img',{src:t.creator_profile_image, class:'profile-image-small', style:'width:24px;height:24px;border-radius:50%;object-fit:cover;'}),
+            el('span',{class:'muted small'},`Created by ${t.created_by}`)
+          ),
+          t.created_by === user.email ? el('button',{class:'btn-remove', onClick:(e)=>{e.stopPropagation(); deleteTrainingItem(t.id);}, style:'margin:0;'},'×') : null
+        )
       )
     ))
   )
@@ -318,10 +375,9 @@ export async function renderTraining(appEl){
   appEl.appendChild(trainingsGrid)
   
   async function deleteTrainingItem(id){
-    if(!confirm('Are you sure you want to delete this training?')) return
-    const res = await training.deleteTraining(id)
+    const res = await training.deleteTraining(id, user.email)
     if(res.ok){
-      showToast('Training deleted', 'success')
+      showToast('Training moved to recycling bin', 'success')
       renderTraining(appEl)
     } else {
       showToast(res.error || 'Failed to delete', 'error')
@@ -341,30 +397,44 @@ export function renderCreateTraining(appEl){
   if(!user){ location.hash = '#/login'; return }
   appEl.innerHTML = ''
   
-  const form = el('div',{class:'card',style:'max-width:800px;margin:0 auto;'},
+  const form = el('div',{style:'max-width:1000px;margin:0 auto;'},
     el('div',{class:'section-header'},
       el('h2',{},'Create New Training'),
       el('button',{class:'btn', onClick:()=> renderTraining(appEl)},'← Back')
     ),
-    el('div',{class:'form-row'},
-      el('label',{for:'training-title',class:'form-label'},'Title *'),
-      el('input',{id:'training-title',placeholder:'Enter training title',type:'text',required:true})
-    ),
-    el('div',{class:'form-row'},
-      el('label',{for:'training-description',class:'form-label'},'Description'),
-      el('input',{id:'training-description',placeholder:'Brief description of the training',type:'text'})
-    ),
-    el('div',{class:'form-row'},
-      el('label',{for:'training-content',class:'form-label'},'Content'),
-      el('textarea',{id:'training-content',placeholder:'Enter training content, instructions, notes, etc.',rows:10,style:'min-height:200px;resize:vertical;'})
-    ),
-    el('div',{class:'form-row'},
-      el('label',{for:'training-video',class:'form-label'},'Video (Optional)'),
-      el('input',{id:'training-video',type:'file',accept:'video/*',onChange:handleVideoSelect}),
-      el('p',{class:'form-hint muted small'},'Upload a video file to accompany your training'),
-      el('div',{id:'video-preview',style:'margin-top:1rem;display:none;'},
-        el('video',{id:'video-preview-element',controls:true,style:'width:100%;max-height:300px;border-radius:8px;'})
+    el('div',{class:'card',style:'margin-bottom:1.5rem;'},
+      el('div',{class:'form-row'},
+        el('label',{for:'training-title',class:'form-label'},'Training Title *'),
+        el('input',{id:'training-title',placeholder:'Enter training title',type:'text',required:true})
+      ),
+      el('div',{class:'form-row'},
+        el('label',{for:'training-description',class:'form-label'},'Description'),
+        el('input',{id:'training-description',placeholder:'Brief description of the training',type:'text'})
+      ),
+      el('div',{class:'form-row'},
+        el('label',{for:'training-thumbnail',class:'form-label'},'Thumbnail Image (Optional)'),
+        el('input',{id:'training-thumbnail',type:'file',accept:'image/*',onChange:handleThumbnailSelect}),
+        el('p',{class:'form-hint muted small'},'Upload a thumbnail image for the training (JPEG, PNG, GIF, or WebP)'),
+        el('div',{id:'thumbnail-preview',style:'margin-top:1rem;display:none;'},
+          el('img',{id:'thumbnail-preview-element',style:'width:100%;max-width:300px;max-height:200px;object-fit:cover;border-radius:8px;border:1px solid #ddd;'})
+        )
       )
+    ),
+    el('div',{class:'card'},
+      el('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;'},
+        el('h3',{style:'margin:0;'},'Content Blocks'),
+        el('div',{class:'block-types',style:'display:flex;gap:0.5rem;flex-wrap:wrap;'},
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('title')},'📝 Title'),
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('text')},'📄 Text'),
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('video')},'🎥 Video'),
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('image')},'🖼️ Image'),
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('code')},'💻 Code'),
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('list')},'📋 List'),
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('quote')},'💬 Quote'),
+          el('button',{class:'btn btn-small',onClick:()=>addBlock('divider')},'➖ Divider')
+        )
+      ),
+      el('div',{id:'blocks-container',style:'min-height:200px;'})
     ),
     el('div',{class:'actions'},
       el('button',{class:'btn btn-large primary', onClick:onSubmit},'Create Training'),
@@ -374,20 +444,29 @@ export function renderCreateTraining(appEl){
   
   appEl.appendChild(form)
   
-  let selectedVideoFile = null
-  let videoUrl = null
+  let selectedThumbnailFile = null
+  let thumbnailUrl = null
+  let blocks = []
+  let blockCounter = 0
+  let draggedElement = null
+  let draggedIndex = null
   
-  function handleVideoSelect(e){
+  function handleThumbnailSelect(e){
     const file = e.target.files[0]
     if(file){
-      if(file.size > 50 * 1024 * 1024){
-        showToast('Video file too large (max 50MB)', 'error')
+      if(file.size > 10 * 1024 * 1024){
+        showToast('Image file too large (max 10MB)', 'error')
         e.target.value = ''
         return
       }
-      selectedVideoFile = file
-      const preview = document.getElementById('video-preview')
-      const previewEl = document.getElementById('video-preview-element')
+      if(!file.type.match(/^image\/(jpeg|jpg|png|gif|webp)$/i)){
+        showToast('Please upload a valid image (JPEG, PNG, GIF, or WebP)', 'error')
+        e.target.value = ''
+        return
+      }
+      selectedThumbnailFile = file
+      const preview = document.getElementById('thumbnail-preview')
+      const previewEl = document.getElementById('thumbnail-preview-element')
       if(preview && previewEl){
         preview.style.display = 'block'
         previewEl.src = URL.createObjectURL(file)
@@ -395,34 +474,399 @@ export function renderCreateTraining(appEl){
     }
   }
   
+  function addBlock(type){
+    const blockId = `block-${blockCounter++}`
+    const block = {
+      id: blockId,
+      type: type,
+      order: blocks.length,
+      content: getDefaultContent(type)
+    }
+    blocks.push(block)
+    renderBlocks()
+  }
+  
+  function getDefaultContent(type){
+    switch(type){
+      case 'title': return {text: '', level: 'h2'}
+      case 'text': return {text: ''}
+      case 'video': return {url: '', file: null}
+      case 'image': return {url: '', file: null, alt: ''}
+      case 'code': return {code: '', language: 'javascript'}
+      case 'list': return {items: [''], ordered: false}
+      case 'quote': return {text: '', author: ''}
+      case 'divider': return {}
+      default: return {}
+    }
+  }
+  
+  function removeBlock(blockId){
+    blocks = blocks.filter(b => b.id !== blockId)
+    blocks.forEach((b, idx) => { b.order = idx })
+    renderBlocks()
+  }
+  
+  function updateBlock(blockId, field, value){
+    const block = blocks.find(b => b.id === blockId)
+    if(block){
+      if(field.includes('.')){
+        const [parent, child] = field.split('.')
+        if(!block.content[parent]) block.content[parent] = {}
+        block.content[parent][child] = value
+      } else {
+        block.content[field] = value
+      }
+    }
+  }
+  
+  function handleDragStart(e, index){
+    draggedElement = e.currentTarget
+    draggedIndex = index
+    e.currentTarget.style.opacity = '0.5'
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  
+  function handleDragOver(e){
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const afterElement = getDragAfterElement(e.currentTarget, e.clientY)
+    const container = document.getElementById('blocks-container')
+    if(afterElement == null){
+      container.appendChild(draggedElement)
+    } else {
+      container.insertBefore(draggedElement, afterElement)
+    }
+  }
+  
+  function handleDragEnd(e){
+    e.currentTarget.style.opacity = '1'
+    const newIndex = Array.from(document.getElementById('blocks-container').children).indexOf(draggedElement)
+    if(newIndex !== draggedIndex){
+      const temp = blocks[draggedIndex]
+      blocks[draggedIndex] = blocks[newIndex]
+      blocks[newIndex] = temp
+      blocks.forEach((b, idx) => { b.order = idx })
+      renderBlocks()
+    }
+    draggedElement = null
+    draggedIndex = null
+  }
+  
+  function getDragAfterElement(container, y){
+    const draggableElements = [...container.querySelectorAll('.block-item:not(.dragging)')]
+    return draggableElements.reduce((closest, child) => {
+      const box = child.getBoundingClientRect()
+      const offset = y - box.top - box.height / 2
+      if(offset < 0 && offset > closest.offset){
+        return {offset: offset, element: child}
+      } else {
+        return closest
+      }
+    }, {offset: Number.NEGATIVE_INFINITY}).element
+  }
+  
+  function renderBlocks(){
+    const container = document.getElementById('blocks-container')
+    if(!container) return
+    
+    container.innerHTML = ''
+    
+    if(blocks.length === 0){
+      container.appendChild(el('div',{class:'empty-state',style:'text-align:center;padding:3rem;'},
+        el('p',{class:'muted'},'No content blocks yet. Click the buttons above to add blocks.')
+      ))
+      return
+    }
+    
+    blocks.sort((a, b) => a.order - b.order).forEach((block, idx) => {
+      const blockEl = renderBlock(block, idx)
+      container.appendChild(blockEl)
+    })
+  }
+  
+  function renderBlock(block, idx){
+    const blockEl = el('div',{
+      class:'block-item',
+      draggable:true,
+      onDragStart:(e)=>handleDragStart(e, idx),
+      onDragOver:handleDragOver,
+      onDragEnd:handleDragEnd,
+      style:'margin-bottom:1rem;padding:1rem;background:#f8fafc;border-radius:8px;border:2px dashed #e2e8f0;cursor:move;position:relative;'
+    },
+      el('div',{style:'display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;'},
+        el('div',{style:'display:flex;align-items:center;gap:0.5rem;'},
+          el('span',{style:'font-size:1.2rem;'},getBlockIcon(block.type)),
+          el('span',{style:'font-weight:600;text-transform:capitalize;'},block.type)
+        ),
+        el('button',{class:'btn-remove',onClick:()=>removeBlock(block.id),style:'margin:0;width:28px;height:28px;font-size:1.2rem;'},'×')
+      ),
+      renderBlockContent(block)
+    )
+    return blockEl
+  }
+  
+  function getBlockIcon(type){
+    const icons = {
+      title: '📝',
+      text: '📄',
+      video: '🎥',
+      image: '🖼️',
+      code: '💻',
+      list: '📋',
+      quote: '💬',
+      divider: '➖'
+    }
+    return icons[type] || '📦'
+  }
+  
+  function renderBlockContent(block){
+    switch(block.type){
+      case 'title':
+        return el('div',{},
+          el('select',{
+            value:block.content.level || 'h2',
+            onChange:(e)=>updateBlock(block.id, 'content.level', e.target.value),
+            style:'width:100px;margin-bottom:0.5rem;padding:0.5rem;border-radius:4px;border:1px solid #e2e8f0;'
+          },
+            el('option',{value:'h1'},'H1'),
+            el('option',{value:'h2'},'H2'),
+            el('option',{value:'h3'},'H3'),
+            el('option',{value:'h4'},'H4')
+          ),
+          el('input',{
+            type:'text',
+            placeholder:'Enter title text',
+            value:block.content.text || '',
+            onInput:(e)=>updateBlock(block.id, 'content.text', e.target.value),
+            style:'width:100%;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;font-size:1.1rem;'
+          })
+        )
+      case 'text':
+        return el('textarea',{
+          placeholder:'Enter text content',
+          rows:6,
+          value:block.content.text || '',
+          onInput:(e)=>updateBlock(block.id, 'content.text', e.target.value),
+          style:'width:100%;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;resize:vertical;font-family:inherit;'
+        })
+      case 'video':
+        return el('div',{},
+          el('input',{
+            type:'file',
+            accept:'video/*',
+            onChange:async (e)=>{
+              const file = e.target.files[0]
+              if(file){
+                if(file.size > 50 * 1024 * 1024){
+                  showToast('Video file too large (max 50MB)', 'error')
+                  return
+                }
+                updateBlock(block.id, 'content.file', file)
+                showToast('Video will be uploaded when you create the training', 'success')
+              }
+            },
+            style:'width:100%;margin-bottom:0.5rem;'
+          }),
+          el('input',{
+            type:'text',
+            placeholder:'Or enter video URL',
+            value:block.content.url || '',
+            onInput:(e)=>updateBlock(block.id, 'content.url', e.target.value),
+            style:'width:100%;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;'
+          })
+        )
+      case 'image':
+        return el('div',{},
+          el('input',{
+            type:'file',
+            accept:'image/*',
+            onChange:async (e)=>{
+              const file = e.target.files[0]
+              if(file){
+                if(file.size > 10 * 1024 * 1024){
+                  showToast('Image file too large (max 10MB)', 'error')
+                  return
+                }
+                updateBlock(block.id, 'content.file', file)
+                const preview = URL.createObjectURL(file)
+                const previewEl = document.getElementById(`image-preview-${block.id}`)
+                if(previewEl){
+                  previewEl.src = preview
+                  previewEl.style.display = 'block'
+                }
+              }
+            },
+            style:'width:100%;margin-bottom:0.5rem;'
+          }),
+          el('img',{
+            id:`image-preview-${block.id}`,
+            style:'width:100%;max-height:300px;object-fit:cover;border-radius:4px;margin-bottom:0.5rem;display:none;'
+          }),
+          el('input',{
+            type:'text',
+            placeholder:'Or enter image URL',
+            value:block.content.url || '',
+            onInput:(e)=>updateBlock(block.id, 'content.url', e.target.value),
+            style:'width:100%;margin-bottom:0.5rem;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;'
+          }),
+          el('input',{
+            type:'text',
+            placeholder:'Alt text (optional)',
+            value:block.content.alt || '',
+            onInput:(e)=>updateBlock(block.id, 'content.alt', e.target.value),
+            style:'width:100%;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;'
+          })
+        )
+      case 'code':
+        return el('div',{},
+          el('input',{
+            type:'text',
+            placeholder:'Language (e.g., javascript, python, html)',
+            value:block.content.language || 'javascript',
+            onInput:(e)=>updateBlock(block.id, 'content.language', e.target.value),
+            style:'width:100%;margin-bottom:0.5rem;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;'
+          }),
+          el('textarea',{
+            placeholder:'Enter code',
+            rows:8,
+            value:block.content.code || '',
+            onInput:(e)=>updateBlock(block.id, 'content.code', e.target.value),
+            style:'width:100%;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;resize:vertical;font-family:monospace;font-size:0.9rem;'
+          })
+        )
+      case 'list':
+        return el('div',{},
+          el('div',{style:'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;'},
+            el('label',{style:'display:flex;align-items:center;gap:0.5rem;cursor:pointer;'},
+              el('input',{
+                type:'checkbox',
+                checked:block.content.ordered || false,
+                onChange:(e)=>updateBlock(block.id, 'content.ordered', e.target.checked)
+              }),
+              el('span',{},'Ordered list')
+            )
+          ),
+          el('div',{id:`list-items-${block.id}`},
+            ...(block.content.items || ['']).map((item, itemIdx) => 
+              el('div',{style:'display:flex;gap:0.5rem;margin-bottom:0.5rem;'},
+                el('input',{
+                  type:'text',
+                  placeholder:`Item ${itemIdx + 1}`,
+                  value:item,
+                  onInput:(e)=>{
+                    const items = [...(block.content.items || [])]
+                    items[itemIdx] = e.target.value
+                    updateBlock(block.id, 'content.items', items)
+                  },
+                  style:'flex:1;padding:0.5rem;border-radius:4px;border:1px solid #e2e8f0;'
+                }),
+                el('button',{
+                  class:'btn btn-small',
+                  onClick:()=>{
+                    const items = [...(block.content.items || [])]
+                    items.splice(itemIdx, 1)
+                    updateBlock(block.id, 'content.items', items)
+                    renderBlocks()
+                  }
+                },'×')
+              )
+            )
+          ),
+          el('button',{
+            class:'btn btn-small',
+            onClick:()=>{
+              const items = [...(block.content.items || [])]
+              items.push('')
+              updateBlock(block.id, 'content.items', items)
+              renderBlocks()
+            }
+          },'+ Add Item')
+        )
+      case 'quote':
+        return el('div',{},
+          el('textarea',{
+            placeholder:'Quote text',
+            rows:4,
+            value:block.content.text || '',
+            onInput:(e)=>updateBlock(block.id, 'content.text', e.target.value),
+            style:'width:100%;margin-bottom:0.5rem;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;resize:vertical;font-family:inherit;'
+          }),
+          el('input',{
+            type:'text',
+            placeholder:'Author (optional)',
+            value:block.content.author || '',
+            onInput:(e)=>updateBlock(block.id, 'content.author', e.target.value),
+            style:'width:100%;padding:0.75rem;border-radius:4px;border:1px solid #e2e8f0;'
+          })
+        )
+      case 'divider':
+        return el('div',{style:'text-align:center;padding:1rem;'},
+          el('hr',{style:'border:none;border-top:2px dashed #cbd5e1;'})
+        )
+      default:
+        return el('div',{class:'muted'},'Unknown block type')
+    }
+  }
+  
   async function onSubmit(){
     const title = document.getElementById('training-title').value.trim()
     const description = document.getElementById('training-description').value.trim()
-    const content = document.getElementById('training-content').value.trim()
     
     if(!title){
       showToast('Title is required', 'error')
       return
     }
     
-    // Upload video if selected
-    if(selectedVideoFile){
-      showToast('Uploading video...', 'success')
-      const uploadRes = await training.uploadVideo(selectedVideoFile, user.email)
+    // Upload thumbnail if selected
+    if(selectedThumbnailFile){
+      showToast('Uploading thumbnail...', 'success')
+      const uploadRes = await training.uploadImage(selectedThumbnailFile, user.email)
       if(uploadRes.ok){
-        videoUrl = uploadRes.video_url
+        thumbnailUrl = uploadRes.image_url
       } else {
-        showToast(uploadRes.error || 'Failed to upload video', 'error')
+        showToast(uploadRes.error || 'Failed to upload thumbnail', 'error')
         return
       }
+    }
+    
+    // Upload files for blocks
+    showToast('Uploading files...', 'success')
+    const processedBlocks = []
+    for(const block of blocks){
+      const processedBlock = {...block}
+      if(block.type === 'video' && block.content.file){
+        const uploadRes = await training.uploadVideo(block.content.file, user.email)
+        if(uploadRes.ok){
+          processedBlock.content.url = uploadRes.video_url
+          delete processedBlock.content.file
+        } else {
+          showToast(`Failed to upload video: ${uploadRes.error}`, 'error')
+          return
+        }
+      } else if(block.type === 'image' && block.content.file){
+        const uploadRes = await training.uploadImage(block.content.file, user.email)
+        if(uploadRes.ok){
+          processedBlock.content.url = uploadRes.image_url
+          delete processedBlock.content.file
+        } else {
+          showToast(`Failed to upload image: ${uploadRes.error}`, 'error')
+          return
+        }
+      }
+      processedBlocks.push(processedBlock)
     }
     
     // Create training
     const res = await training.createTraining(user.email, {
       title,
       description,
-      content,
-      video_url: videoUrl
+      thumbnail_url: thumbnailUrl,
+      blocks: processedBlocks.map((b, idx) => ({
+        id: b.id,
+        type: b.type,
+        order: idx,
+        content: b.content
+      }))
     })
     
     if(res.ok){
@@ -432,6 +876,9 @@ export function renderCreateTraining(appEl){
       showToast(res.error || 'Failed to create training', 'error')
     }
   }
+  
+  // Initial render
+  renderBlocks()
 }
 
 export function renderTrainingView(appEl, trainingData){
@@ -441,28 +888,241 @@ export function renderTrainingView(appEl, trainingData){
   
   const header = el('div',{class:'training-view-header'},
     el('button',{class:'btn', onClick:()=> renderTraining(appEl)},'← Back to Trainings'),
+    trainingData.thumbnail_url ? el('img',{src:trainingData.thumbnail_url, style:'width:100%;max-width:600px;max-height:300px;object-fit:cover;border-radius:12px;margin-bottom:1.5rem;'}) : null,
     el('h1',{},trainingData.title),
     el('p',{class:'muted'},trainingData.description || '')
   )
   
-  const content = el('div',{class:'card training-view-content'},
-    trainingData.video_url ? el('div',{class:'training-video-full',style:'margin-bottom:2rem;'},
-      el('h3',{},'Video'),
-      el('video',{src:trainingData.video_url, controls:true, style:'width:100%;max-height:500px;border-radius:12px;margin-top:1rem;'})
-    ) : null,
-    trainingData.content ? el('div',{class:'training-text-full'},
-      el('h3',{},'Content'),
-      el('div',{style:'white-space:pre-wrap;line-height:1.8;margin-top:1rem;padding:1.5rem;background:#f8fafc;border-radius:12px;'},
-        trainingData.content
-      )
-    ) : null,
-    !trainingData.video_url && !trainingData.content ? el('div',{class:'empty-state'},
-      el('p',{class:'muted'},'No content available for this training')
-    ) : null
-  )
+  // Render blocks if available, otherwise fallback to old format
+  let content
+  if(trainingData.blocks && trainingData.blocks.length > 0){
+    content = el('div',{class:'training-view-content'},
+      ...trainingData.blocks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(block => renderBlockView(block))
+    )
+  } else {
+    // Fallback for old format
+    content = el('div',{class:'card training-view-content'},
+      trainingData.video_url ? el('div',{class:'training-video-full',style:'margin-bottom:2rem;'},
+        el('h3',{},'Video'),
+        el('video',{src:trainingData.video_url, controls:true, style:'width:100%;max-height:500px;border-radius:12px;margin-top:1rem;'})
+      ) : null,
+      trainingData.content ? el('div',{class:'training-text-full',style:'margin-bottom:2rem;'},
+        el('h3',{},'Content'),
+        el('div',{style:'white-space:pre-wrap;line-height:1.8;margin-top:1rem;padding:1.5rem;background:#f8fafc;border-radius:12px;'},
+          trainingData.content
+        )
+      ) : null,
+      (!trainingData.video_url && !trainingData.content) ? el('div',{class:'empty-state'},
+        el('p',{class:'muted'},'No content available for this training')
+      ) : null
+    )
+  }
   
   appEl.appendChild(header)
   appEl.appendChild(content)
+}
+
+function renderBlockView(block){
+  switch(block.type){
+    case 'title':
+      const level = block.content?.level || 'h2'
+      const titleText = block.content?.text || ''
+      const titleEl = document.createElement(level)
+      titleEl.textContent = titleText
+      titleEl.style.margin = '2rem 0 1rem 0'
+      return titleEl
+    case 'text':
+      return el('div',{class:'card',style:'margin-bottom:1.5rem;padding:1.5rem;'},
+        el('div',{style:'white-space:pre-wrap;line-height:1.8;'},block.content?.text || '')
+      )
+    case 'video':
+      return el('div',{class:'card',style:'margin-bottom:1.5rem;'},
+        el('video',{
+          src:block.content?.url || '',
+          controls:true,
+          style:'width:100%;max-height:500px;border-radius:12px;display:block;'
+        })
+      )
+    case 'image':
+      return el('div',{class:'card',style:'margin-bottom:1.5rem;padding:0;overflow:hidden;'},
+        el('img',{
+          src:block.content?.url || '',
+          alt:block.content?.alt || '',
+          style:'width:100%;max-height:500px;object-fit:cover;display:block;'
+        })
+      )
+    case 'code':
+      return el('div',{class:'card',style:'margin-bottom:1.5rem;padding:1.5rem;background:#1e293b;color:#e2e8f0;'},
+        el('div',{style:'margin-bottom:0.5rem;font-size:0.875rem;color:#94a3b8;text-transform:uppercase;'},block.content?.language || 'code'),
+        el('pre',{style:'margin:0;overflow-x:auto;'},
+          el('code',{style:'font-family:monospace;font-size:0.9rem;line-height:1.6;'},block.content?.code || '')
+        )
+      )
+    case 'list':
+      const items = block.content?.items || []
+      const ListTag = block.content?.ordered ? 'ol' : 'ul'
+      return el('div',{class:'card',style:'margin-bottom:1.5rem;padding:1.5rem;'},
+        el(ListTag,{style:'margin:0;padding-left:1.5rem;line-height:1.8;'},
+          ...items.filter(item => item.trim()).map(item => el('li',{},item))
+        )
+      )
+    case 'quote':
+      return el('div',{class:'card',style:'margin-bottom:1.5rem;padding:1.5rem;border-left:4px solid #2563eb;background:#f8fafc;'},
+        el('blockquote',{style:'margin:0;font-style:italic;line-height:1.8;font-size:1.1rem;'},block.content?.text || ''),
+        block.content?.author ? el('div',{style:'margin-top:1rem;text-align:right;color:#64748b;'},`— ${block.content.author}`) : null
+      )
+    case 'divider':
+      return el('div',{style:'margin:2rem 0;text-align:center;'},
+        el('hr',{style:'border:none;border-top:2px dashed #cbd5e1;'})
+      )
+    default:
+      return el('div',{class:'card',style:'margin-bottom:1.5rem;padding:1.5rem;'},'Unknown block type')
+  }
+}
+
+export async function renderRecyclingBin(appEl){
+  const user = auth.getCurrentUser()
+  if(!user){ location.hash = '#/login'; return }
+  appEl.innerHTML = ''
+  
+  const header = el('div',{class:'training-header'},
+    el('div',{style:'display:flex;justify-content:space-between;align-items:center;width:100%;'},
+      el('div',{},
+        el('h1',{},'🗑️ Recycling Bin'),
+        el('p',{class:'muted'},'Restore or permanently delete your deleted items')
+      )
+    )
+  )
+  
+  // Load deleted trainings and inventory
+  const deletedTrainings = await training.getDeletedTrainings(user.email)
+  const userData = await auth.getUserData(user.email) || {}
+  const deletedInventory = userData.deleted_inventory || []
+  
+  const hasItems = deletedTrainings.length > 0 || deletedInventory.length > 0
+  
+  if(!hasItems){
+    const emptyState = el('div',{class:'card',style:'text-align:center;padding:3rem;'},
+      el('span',{style:'font-size:4rem;display:block;margin-bottom:1rem;'},'🗑️'),
+      el('h2',{},'Recycling Bin is Empty'),
+      el('p',{class:'muted'},'Deleted items will appear here')
+    )
+    appEl.appendChild(header)
+    appEl.appendChild(emptyState)
+    return
+  }
+  
+  const content = el('div',{})
+  
+  // Deleted Trainings Section
+  if(deletedTrainings.length > 0){
+    const trainingsSection = el('div',{style:'margin-bottom:2rem;'},
+      el('h2',{style:'margin-bottom:1rem;'},'Deleted Trainings'),
+      el('div',{class:'trainings-grid'},
+        ...deletedTrainings.map(t => el('div',{class:'card training-item-card',style:'opacity:0.8;'},
+          t.thumbnail_url ? el('img',{src:t.thumbnail_url, style:'width:100%;max-height:250px;object-fit:cover;border-radius:12px 12px 0 0;margin:-1rem -1rem 1rem -1rem;display:block;'}) : null,
+          el('div',{class:'training-item-content',style:'padding:0;'},
+            el('h3',{style:'margin:0 0 0.5rem 0;'},t.title),
+            el('p',{class:'muted',style:'margin:0 0 1rem 0;'},t.description || 'No description'),
+            el('div',{style:'margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border-light);display:flex;gap:0.5rem;'},
+              el('button',{class:'btn primary',onClick:()=>restoreTrainingItem(t.id)},'↩️ Restore'),
+              el('button',{class:'btn',style:'background:var(--error);color:#fff;',onClick:()=>permanentDeleteTrainingItem(t.id)},'🗑️ Delete Permanently')
+            )
+          )
+        ))
+      )
+    )
+    content.appendChild(trainingsSection)
+  }
+  
+  // Deleted Inventory Section
+  if(deletedInventory.length > 0){
+    const inventorySection = el('div',{},
+      el('h2',{style:'margin-bottom:1rem;'},'Deleted Inventory Items'),
+      el('ul',{class:'list inventory-list'},
+        ...deletedInventory.map((item, idx) => el('li',{class:'inventory-item-full'},
+          el('span',{class:'item-number'},`${idx + 1}.`),
+          el('span',{class:'item-icon'},'📦'),
+          el('span',{class:'item-name'}, item),
+          el('div',{style:'margin-left:auto;display:flex;gap:0.5rem;'},
+            el('button',{class:'btn btn-small primary',onClick:()=>restoreInventoryItem(idx)},'↩️ Restore'),
+            el('button',{class:'btn btn-small',style:'background:var(--error);color:#fff;',onClick:()=>permanentDeleteInventoryItem(idx)},'🗑️ Delete')
+          )
+        ))
+      )
+    )
+    content.appendChild(inventorySection)
+  }
+  
+  appEl.appendChild(header)
+  appEl.appendChild(content)
+  
+  async function restoreTrainingItem(id){
+    const res = await training.restoreTraining(id, user.email)
+    if(res.ok){
+      showToast('Training restored', 'success')
+      renderRecyclingBin(appEl)
+    } else {
+      showToast(res.error || 'Failed to restore', 'error')
+    }
+  }
+  
+  async function permanentDeleteTrainingItem(id){
+    if(!confirm('Are you sure you want to permanently delete this training? This action cannot be undone.')) return
+    const res = await training.permanentDeleteTraining(id, user.email)
+    if(res.ok){
+      showToast('Training permanently deleted', 'success')
+      renderRecyclingBin(appEl)
+    } else {
+      showToast(res.error || 'Failed to delete', 'error')
+    }
+  }
+  
+  async function restoreInventoryItem(idx){
+    const item = deletedInventory[idx]
+    const userData = await auth.getUserData(user.email) || {inventory:[], deleted_inventory:[]}
+    userData.inventory = userData.inventory || []
+    userData.deleted_inventory = userData.deleted_inventory || []
+    
+    // Move back to inventory
+    userData.inventory.push(item)
+    userData.deleted_inventory.splice(idx, 1)
+    
+    const res = await auth.saveUserData({
+      name: user.name,
+      email: user.email,
+      inventory: userData.inventory,
+      deleted_inventory: userData.deleted_inventory
+    })
+    
+    if(res.ok){
+      showToast('Item restored', 'success')
+      renderRecyclingBin(appEl)
+    } else {
+      showToast(res.error || 'Failed to restore', 'error')
+    }
+  }
+  
+  async function permanentDeleteInventoryItem(idx){
+    if(!confirm('Are you sure you want to permanently delete this item? This action cannot be undone.')) return
+    const userData = await auth.getUserData(user.email) || {deleted_inventory:[]}
+    userData.deleted_inventory = userData.deleted_inventory || []
+    userData.deleted_inventory.splice(idx, 1)
+    
+    const res = await auth.saveUserData({
+      name: user.name,
+      email: user.email,
+      inventory: userData.inventory || [],
+      deleted_inventory: userData.deleted_inventory
+    })
+    
+    if(res.ok){
+      showToast('Item permanently deleted', 'success')
+      renderRecyclingBin(appEl)
+    } else {
+      showToast(res.error || 'Failed to delete', 'error')
+    }
+  }
 }
 
 export function renderTrainingModules(appEl){

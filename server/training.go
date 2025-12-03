@@ -7,16 +7,25 @@ import (
 	"time"
 )
 
+// ContentBlock represents a single content element in a training
+type ContentBlock struct {
+	ID      string                 `json:"id"`
+	Type    string                 `json:"type"` // title, text, video, image, code, list, quote, divider
+	Order   int                    `json:"order"`
+	Content map[string]interface{} `json:"content"` // Flexible content based on type
+}
+
 // Training represents a training module
 type Training struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Content     string    `json:"content"` // Text content/markdown
-	VideoURL    string    `json:"video_url,omitempty"` // Path to uploaded video
-	CreatedBy   string    `json:"created_by"` // Email of creator
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID           string         `json:"id"`
+	Title        string         `json:"title"`
+	Description  string         `json:"description"`
+	ThumbnailURL string         `json:"thumbnail_url,omitempty"` // Path to uploaded thumbnail image
+	Blocks       []ContentBlock `json:"blocks,omitempty"`        // Array of ordered content blocks
+	CreatedBy    string         `json:"created_by"`              // Email of creator
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	DeletedAt    *time.Time     `json:"deleted_at,omitempty"` // Soft delete timestamp
 }
 
 // TrainingStore manages training data
@@ -69,7 +78,23 @@ func (s *TrainingStore) getAll() []Training {
 	defer s.mu.Unlock()
 	trainings := make([]Training, 0, len(s.Trainings))
 	for _, t := range s.Trainings {
-		trainings = append(trainings, t)
+		// Only return non-deleted trainings
+		if t.DeletedAt == nil {
+			trainings = append(trainings, t)
+		}
+	}
+	return trainings
+}
+
+func (s *TrainingStore) getDeletedByUser(email string) []Training {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	trainings := make([]Training, 0)
+	for _, t := range s.Trainings {
+		// Only return deleted trainings by this user
+		if t.DeletedAt != nil && t.CreatedBy == email {
+			trainings = append(trainings, t)
+		}
 	}
 	return trainings
 }
@@ -87,4 +112,3 @@ func (s *TrainingStore) delete(id string) error {
 	s.mu.Unlock()
 	return s.save()
 }
-

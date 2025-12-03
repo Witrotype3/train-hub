@@ -31,8 +31,9 @@ type LoginRequest struct {
 
 // UserUpdateRequest represents the user update request payload
 type UserUpdateRequest struct {
-	Email     string   `json:"email"`
-	Inventory []string `json:"inventory"`
+	Email            string   `json:"email"`
+	Inventory        []string `json:"inventory,omitempty"`
+	DeletedInventory []string `json:"deleted_inventory,omitempty"`
 }
 
 // Handlers contains all HTTP handlers
@@ -84,12 +85,13 @@ func (h *Handlers) HandleSignup(w http.ResponseWriter, r *http.Request) {
 
 	// Create user
 	user := User{
-		Name:           name,
-		Email:          email,
-		HashedPassword: string(hashed),
-		Inventory:      []string{},
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		Name:            name,
+		Email:           email,
+		HashedPassword:  string(hashed),
+		Inventory:       []string{},
+		DeletedInventory: []string{},
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := h.store.put(user); err != nil {
@@ -215,7 +217,13 @@ func (h *Handlers) HandleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update inventory
-	u.Inventory = req.Inventory
+	if req.Inventory != nil {
+		u.Inventory = req.Inventory
+	}
+	// Update deleted inventory
+	if req.DeletedInventory != nil {
+		u.DeletedInventory = req.DeletedInventory
+	}
 	u.UpdatedAt = time.Now()
 
 	if err := h.store.put(u); err != nil {

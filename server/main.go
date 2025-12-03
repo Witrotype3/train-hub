@@ -11,12 +11,13 @@ import (
 )
 
 type User struct {
-	Name           string    `json:"name"`
-	Email          string    `json:"email"`
-	HashedPassword string    `json:"hashed_password"`
-	Inventory      []string  `json:"inventory"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at,omitempty"`
+	Name            string    `json:"name"`
+	Email           string    `json:"email"`
+	HashedPassword  string    `json:"hashed_password"`
+	Inventory       []string  `json:"inventory"`
+	DeletedInventory []string `json:"deleted_inventory,omitempty"`
+	CreatedAt       time.Time `json:"created_at,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at,omitempty"`
 }
 
 type UserStore struct {
@@ -111,11 +112,14 @@ func main() {
 	// Initialize training store and handlers
 	trainingsFile := filepath.Join(getCurrentDir(), "trainings.json")
 	trainingStore := NewTrainingStore(trainingsFile)
-	uploadPath := filepath.Join(getCurrentDir(), "uploads", "videos")
-	trainingHandlers := NewTrainingHandlers(trainingStore, uploadPath)
+	videoUploadPath := filepath.Join(getCurrentDir(), "uploads", "videos")
+	imageUploadPath := filepath.Join(getCurrentDir(), "uploads", "images")
+	trainingHandlers := NewTrainingHandlers(trainingStore, videoUploadPath, imageUploadPath)
 
 	// Serve uploaded videos
-	http.Handle("/uploads/videos/", http.StripPrefix("/uploads/videos/", http.FileServer(http.Dir(uploadPath))))
+	http.Handle("/uploads/videos/", http.StripPrefix("/uploads/videos/", http.FileServer(http.Dir(videoUploadPath))))
+	// Serve uploaded images
+	http.Handle("/uploads/images/", http.StripPrefix("/uploads/images/", http.FileServer(http.Dir(imageUploadPath))))
 
 	// Training API routes
 	http.HandleFunc("/api/trainings", chainMiddleware(
@@ -151,8 +155,32 @@ func main() {
 		loggingMiddleware,
 	))
 
+	http.HandleFunc("/api/training/deleted", chainMiddleware(
+		trainingHandlers.HandleGetDeletedTrainings,
+		corsMiddleware,
+		loggingMiddleware,
+	))
+
+	http.HandleFunc("/api/training/restore", chainMiddleware(
+		trainingHandlers.HandleRestoreTraining,
+		corsMiddleware,
+		loggingMiddleware,
+	))
+
+	http.HandleFunc("/api/training/permanent-delete", chainMiddleware(
+		trainingHandlers.HandlePermanentDeleteTraining,
+		corsMiddleware,
+		loggingMiddleware,
+	))
+
 	http.HandleFunc("/api/upload-video", chainMiddleware(
 		trainingHandlers.HandleUploadVideo,
+		corsMiddleware,
+		loggingMiddleware,
+	))
+
+	http.HandleFunc("/api/upload-image", chainMiddleware(
+		trainingHandlers.HandleUploadImage,
 		corsMiddleware,
 		loggingMiddleware,
 	))

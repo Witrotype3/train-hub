@@ -27,6 +27,15 @@ async function apiRequest(endpoint, options = {}) {
 
   try {
     const response = await fetch(url, config)
+    
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text()
+      console.error('Non-JSON response from server:', text.substring(0, 200))
+      throw new Error('Server returned an invalid response. Please try again.')
+    }
+    
     const data = await response.json()
     
     if (!response.ok && !data.ok) {
@@ -38,6 +47,10 @@ async function apiRequest(endpoint, options = {}) {
     if (error instanceof TypeError) {
       // Network error
       throw new Error('Server unreachable. Please check your connection.')
+    }
+    // Handle JSON parse errors
+    if (error.message && error.message.includes('JSON')) {
+      throw new Error('Server returned an invalid response. Please try again.')
     }
     throw error
   }

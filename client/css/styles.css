@@ -47,9 +47,12 @@ body{
   background:var(--card);
   border-bottom:1px solid var(--border);
   box-shadow:var(--shadow-sm);
-  position:sticky;
+  position:fixed;
   top:0;
-  z-index:100;
+  left:0;
+  right:0;
+  z-index:1000;
+  width:100%;
 }
 
 .logo{
@@ -113,8 +116,8 @@ body{
 /* Main App Container */
 .app{
   max-width:1200px;
-  margin:32px auto;
-  padding:0 24px;
+  margin:0 auto;
+  padding:80px 24px 32px 24px;
   min-height:calc(100vh - 200px);
 }
 
@@ -538,8 +541,8 @@ p{margin-bottom:12px;}
 /* Responsive Design */
 @media (max-width:768px){
   .app{
-    padding:0 16px;
-    margin:24px auto;
+    padding:80px 16px 24px 16px;
+    margin:0 auto;
   }
   
   .hero-title{
@@ -719,7 +722,16 @@ p{margin-bottom:12px;}
 }
 
 /* Training Pages */
-.training-header,
+.training-header{
+  position:sticky;
+  top:70px;
+  background:var(--bg);
+  padding:16px 0;
+  margin-bottom:32px;
+  z-index:10;
+  text-align:left;
+}
+
 .modules-header,
 .videos-header{
   margin-bottom:32px;
@@ -864,11 +876,27 @@ p{margin-bottom:12px;}
 
 .training-item-card{
   transition:all 0.2s;
+  overflow:hidden;
 }
 
 .training-item-card:hover{
   transform:translateY(-2px);
   box-shadow:var(--shadow-lg);
+}
+
+.training-item-card img{
+  width:100%;
+  max-height:250px;
+  object-fit:cover;
+  display:block;
+}
+
+.profile-image-small{
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  object-fit:cover;
+  border:2px solid var(--border);
 }
 
 .training-item-header{
@@ -943,6 +971,55 @@ p{margin-bottom:12px;}
   max-height:300px;
   border-radius:var(--radius-sm);
   background:#000;
+}
+
+/* Drag and Drop Styles */
+.block-item{
+  transition:all 0.2s;
+  user-select:none;
+}
+
+.block-item:hover{
+  border-color:#cbd5e1;
+  background:#f1f5f9;
+}
+
+.block-item:active{
+  cursor:grabbing;
+}
+
+.block-item.dragging{
+  opacity:0.5;
+  transform:rotate(2deg);
+}
+
+#blocks-container{
+  position:relative;
+}
+
+.block-item[draggable="true"]{
+  cursor:grab;
+}
+
+.block-item[draggable="true"]:active{
+  cursor:grabbing;
+}
+
+.block-types{
+  display:flex;
+  gap:0.5rem;
+  flex-wrap:wrap;
+}
+
+.block-types button{
+  font-size:0.875rem;
+  padding:0.5rem 0.75rem;
+  transition:all 0.2s;
+}
+
+.block-types button:hover{
+  transform:translateY(-1px);
+  box-shadow:var(--shadow);
 }
 
 @media (max-width:768px){
