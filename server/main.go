@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -90,7 +91,31 @@ func (s *UserStore) getAllUsers() []User {
 
 func main() {
 	// Serve static files from the client directory
-	http.Handle("/", http.FileServer(http.Dir(filepath.Join(getCurrentDir(), "../client"))))
+	clientDir := filepath.Join(getCurrentDir(), "../client")
+	fileServer := http.FileServer(http.Dir(clientDir))
+
+	// SPA Handler: Serve static files if they exist, otherwise serve index.html
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Ignore API requests
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			return
+		}
+
+		// Don't modify path for uploads
+		if strings.HasPrefix(r.URL.Path, "/uploads/") {
+			return
+		}
+
+		path := filepath.Join(clientDir, r.URL.Path)
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) || r.URL.Path == "/" {
+			// If file doesn't exist, serve index.html for SPA routing
+			http.ServeFile(w, r, filepath.Join(clientDir, "index.html"))
+			return
+		}
+
+		fileServer.ServeHTTP(w, r)
+	})
 
 	// Initialize user store
 	usersFile := filepath.Join(getCurrentDir(), "users.json")
@@ -212,7 +237,7 @@ func main() {
 	// Start the server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "443" // Default to 443 for production
+		port = "8080" // Default to 8080 for production
 	}
 	port = ":" + port
 	log.Printf("Server running on http://localhost%s", port)

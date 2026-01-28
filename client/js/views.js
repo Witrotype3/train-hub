@@ -1,5 +1,6 @@
 import * as auth from './auth.js'
 import * as training from './training.js'
+import { navigate } from './router.js'
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag)
@@ -29,6 +30,7 @@ function showToast(message, type = 'error', timeout = 3500) {
   container.appendChild(t)
   setTimeout(() => { t.remove() }, timeout)
 }
+
 
 /**
  * Sets up Enter key navigation for a form
@@ -103,8 +105,8 @@ export function renderHome(appEl) {
       el('h2', {}, 'Get Started Today'),
       el('p', { class: 'muted' }, 'Create your free account to start managing your inventory and accessing training resources.'),
       el('div', { class: 'cta-buttons' },
-        el('button', { class: 'btn btn-large primary', onClick: () => location.hash = '#/signup' }, 'Create Account'),
-        el('button', { class: 'btn btn-large', onClick: () => location.hash = '#/login' }, 'Sign In')
+        el('button', { class: 'btn btn-large primary', onClick: () => navigate('/signup') }, 'Create Account'),
+        el('button', { class: 'btn btn-large', onClick: () => navigate('/login') }, 'Sign In')
       )
     )
 
@@ -114,7 +116,7 @@ export function renderHome(appEl) {
   }
 
   // Show training page content when logged in
-  renderTraining(appEl)
+  navigate('/training')
 }
 
 export function renderLogin(appEl) {
@@ -134,11 +136,11 @@ export function renderLogin(appEl) {
     ),
     el('div', { class: 'actions' },
       el('button', { class: 'btn btn-large primary', onClick: onLogin }, 'Sign In'),
-      el('button', { class: 'btn btn-large', onClick: () => location.hash = '#/signup' }, 'Create Account')
+      el('button', { class: 'btn btn-large', onClick: () => navigate('/signup') }, 'Create Account')
     ),
     el('div', { class: 'login-footer' },
       el('p', { class: 'muted small' }, 'Don\'t have an account? '),
-      el('a', { href: '#/signup', class: 'link' }, 'Sign up here')
+      el('a', { href: '/signup', class: 'link' }, 'Sign up here')
     ),
     el('div', { id: 'login-error', class: 'muted small' })
   )
@@ -152,7 +154,7 @@ export function renderLogin(appEl) {
     const res = await auth.login(email, password)
     if (!res.ok) { showToast(res.error || 'Login failed', 'error'); return }
     showToast('Signed in successfully', 'success')
-    location.hash = '#/'
+    navigate('/inventory')
   }
 
   // Setup Enter key navigation
@@ -185,11 +187,11 @@ export function renderSignup(appEl) {
     ),
     el('div', { class: 'actions' },
       el('button', { class: 'btn btn-large primary', onClick: onSignup }, 'Create Account'),
-      el('button', { class: 'btn btn-large', onClick: () => location.hash = '#/login' }, 'Sign In Instead')
+      el('button', { class: 'btn btn-large', onClick: () => navigate('/login') }, 'Sign In Instead')
     ),
     el('div', { class: 'signup-footer' },
       el('p', { class: 'muted small' }, 'Already have an account? '),
-      el('a', { href: '#/login', class: 'link' }, 'Sign in here')
+      el('a', { href: '/login', class: 'link' }, 'Sign in here')
     ),
     el('div', { id: 'signup-error', class: 'muted small' })
   )
@@ -208,7 +210,7 @@ export function renderSignup(appEl) {
     const res = await auth.signup({ name, email, password })
     if (!res.ok) { showToast(res.error || 'Signup failed', 'error'); return }
     showToast('Account created successfully!', 'success')
-    location.hash = '#/'
+    navigate('/inventory')
   }
 
   // Setup Enter key navigation
@@ -217,7 +219,7 @@ export function renderSignup(appEl) {
 
 export async function renderInventory(appEl) {
   const user = auth.getCurrentUser()
-  if (!user) { location.hash = '#/login'; return }
+  if (!user) { navigate('/login'); return }
   appEl.innerHTML = ''
   const data = (await auth.getUserData(user.email)) || { inventory: [], deleted_inventory: [] }
 
@@ -289,7 +291,13 @@ export async function renderInventory(appEl) {
       ),
       el('div', { class: 'form-row', style: 'flex:1; margin-bottom:0;' },
         el('label', { for: 'item-number', class: 'form-label' }, 'Item Number'),
-        el('input', { id: 'item-number', placeholder: 'e.g., 12345', type: 'text', required: true })
+        el('input', {
+          id: 'item-number',
+          placeholder: 'e.g., 12345',
+          type: 'text',
+          required: true,
+          value: String((data.inventory?.length || 0) + 1)
+        })
       ),
       el('div', { class: 'form-row', style: 'flex:0.5; min-width:80px; margin-bottom:0;' },
         el('label', { for: 'item-quantity', class: 'form-label' }, 'Stock'),
@@ -352,6 +360,11 @@ export async function renderInventory(appEl) {
   appEl.appendChild(header)
   appEl.appendChild(createForm)
   appEl.appendChild(inventoryList)
+
+  // Add Recycling Bin section
+  const recyclingBin = renderRecyclingBin()
+  appEl.appendChild(recyclingBin)
+
   appEl.appendChild(otherInventoriesSection)
 
   // Load other users' inventories
@@ -496,13 +509,13 @@ export async function renderInventory(appEl) {
     // Clear form
     document.getElementById('item-description').value = ''
     document.getElementById('item-upc').value = ''
-    document.getElementById('item-number').value = ''
+    document.getElementById('item-number').value = String((data.inventory?.length || 0) + 1)
     document.getElementById('item-quantity').value = ''
     document.getElementById('item-target').value = ''
     document.getElementById('item-description').focus()
 
     showToast('Item added successfully', 'success')
-    renderInventory(appEl)
+    navigate('/inventory')
   }
 
 
@@ -518,7 +531,59 @@ export async function renderInventory(appEl) {
       deleted_inventory: data.deleted_inventory
     })
     showToast('Item moved to recycling bin', 'success')
-    renderInventory(appEl)
+    navigate('/inventory')
+  }
+
+  async function restoreItem(idx) {
+    const item = data.deleted_inventory[idx]
+    data.inventory = data.inventory || []
+    data.inventory.push(item)
+    data.deleted_inventory.splice(idx, 1)
+    await auth.saveUserData({
+      name: user.name,
+      email: user.email,
+      inventory: data.inventory,
+      deleted_inventory: data.deleted_inventory
+    })
+    showToast('Item restored successfully', 'success')
+    navigate('/inventory')
+  }
+
+  function renderRecyclingBin() {
+    const hasItems = data.deleted_inventory && data.deleted_inventory.length > 0
+
+    return el('div', { class: 'recycling-bin-section', style: 'margin-top:3rem; padding-top:2rem; border-top:1px dashed var(--border);' },
+      el('div', { class: 'section-header', style: 'margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;' },
+        el('span', { style: 'font-size:1.5rem;' }, '♻️'),
+        el('h2', { style: 'margin:0;' }, 'Recycling Bin'),
+        hasItems ? el('span', { class: 'badge muted' }, `${data.deleted_inventory.length} items`) : null
+      ),
+      el('p', { class: 'muted', style: 'margin-bottom:1.5rem;' },
+        hasItems ? 'Items deleted from your inventory appear here. You can restore them anytime.' : 'Your recycling bin is empty.'
+      ),
+      hasItems ? el('div', { class: 'inventory-table-container', style: 'opacity:0.7;' },
+        el('table', { class: 'inventory-table' },
+          el('thead', {},
+            el('tr', {},
+              el('th', {}, 'Description'),
+              el('th', {}, 'UPC'),
+              el('th', {}, 'Number'),
+              el('th', {}, 'Actions')
+            )
+          ),
+          el('tbody', {},
+            ...data.deleted_inventory.map((item, idx) => el('tr', {},
+              el('td', {}, item.description || ''),
+              el('td', {}, item.upc || ''),
+              el('td', {}, item.number || ''),
+              el('td', { class: 'item-actions' },
+                el('button', { class: 'btn small primary', onClick: () => restoreItem(idx) }, 'Restore')
+              )
+            ))
+          )
+        )
+      ) : null
+    )
   }
 
   async function loadOtherInventories() {
@@ -594,7 +659,7 @@ export async function renderInventory(appEl) {
 
 export async function renderTraining(appEl) {
   const user = auth.getCurrentUser()
-  if (!user) { location.hash = '#/login'; return }
+  if (!user) { navigate('/login'); return }
   appEl.innerHTML = ''
 
   const header = el('div', { class: 'training-header' },
@@ -603,19 +668,22 @@ export async function renderTraining(appEl) {
         el('h1', {}, 'Training Center'),
         el('p', { class: 'muted' }, 'Create and access interactive training modules and video resources')
       ),
-      el('button', { class: 'btn btn-large primary', onClick: () => renderCreateTraining(appEl) }, '➕ Create Training')
+      el('div', { class: 'cta-buttons' },
+        el('button', { class: 'btn btn-large primary', onClick: () => navigate('/training/create') }, '➕ Create Training'),
+        el('button', { class: 'btn btn-large', onClick: () => training.getTrainings().then(ts => { trainings = ts; navigate('/training') }) }, '🔄 Refresh')
+      )
     )
   )
 
   // Load trainings
-  const trainings = await training.getTrainings()
+  let trainings = await training.getTrainings()
 
   if (trainings.length === 0) {
     const emptyState = el('div', { class: 'card', style: 'text-align:center;padding:3rem;' },
-      el('span', { style: 'font-size:4rem;display:block;margin-bottom:1rem;' }, '📚'),
-      el('h2', {}, 'No Trainings Yet'),
-      el('p', { class: 'muted' }, 'Create your first training module to get started'),
-      el('button', { class: 'btn btn-large primary', onClick: () => renderCreateTraining(appEl), style: 'margin-top:1.5rem;' }, 'Create Training')
+      el('div', { style: 'text-align:center; padding:2rem; background: var(--card-bg); border-radius:12px; border: 2px dashed var(--border);' },
+        el('h3', { style: 'margin-bottom:1rem;' }, 'Ready to start?'),
+        el('button', { class: 'btn btn-large primary', onClick: () => navigate('/training/create'), style: 'margin:0;' }, 'Create New Module')
+      )
     )
     appEl.appendChild(header)
     appEl.appendChild(emptyState)
@@ -623,7 +691,7 @@ export async function renderTraining(appEl) {
   }
 
   const trainingsGrid = el('div', { class: 'trainings-grid' },
-    ...trainings.map(t => el('div', { class: 'card training-item-card', onClick: () => viewTraining(t.id), style: 'cursor:pointer;' },
+    ...trainings.map(t => el('div', { class: 'card training-item-card', onClick: () => navigate(`/training/view?id=${t.id}`), style: 'cursor:pointer;' },
       t.thumbnail_url ? el('img', { src: t.thumbnail_url, style: 'width:100%;max-height:250px;object-fit:cover;border-radius:12px 12px 0 0;margin:-1rem -1rem 1rem -1rem;display:block;' }) : null,
       el('div', { class: 'training-item-content', style: 'padding:0;' },
         el('h3', { style: 'margin:0 0 0.5rem 0;' }, t.title),
@@ -634,7 +702,7 @@ export async function renderTraining(appEl) {
             // el('img',{src:t.creator_profile_image, class:'profile-image-small', style:'width:24px;height:24px;border-radius:50%;object-fit:cover;'}),
             el('span', { class: 'muted small' }, `Created by ${t.created_by}`)
           ),
-          t.created_by === user.email ? el('button', { class: 'btn-remove', onClick: (e) => { e.stopPropagation(); deleteTrainingItem(t.id); }, style: 'margin:0;' }, '×') : null
+          t.created_by === user.email ? el('button', { class: 'btn-remove', onClick: (e) => { e.stopPropagation(); deleteAndRefresh(t.id); }, style: 'margin:0;' }, '×') : null
         )
       )
     ))
@@ -647,29 +715,48 @@ export async function renderTraining(appEl) {
     const res = await training.deleteTraining(id, user.email)
     if (res.ok) {
       showToast('Training moved to recycling bin', 'success')
-      renderTraining(appEl)
+      navigate('/training')
     } else {
       showToast(res.error || 'Failed to delete', 'error')
     }
   }
 
-  async function viewTraining(id) {
+  async function deleteAndRefresh(id) {
+    if (!confirm('Are you sure you want to delete this training?')) return
+    await training.deleteTraining(id, user.email)
+    showToast('Training moved to recycling bin', 'success')
+    navigate('/training')
+  }
+
+  // New helper for URL based routing
+  window.viewTraining = async (id) => {
     const t = await training.getTraining(id)
-    if (t) {
-      renderTrainingView(appEl, t)
-    }
+    if (t) renderTrainingView(appEl, t)
+    else showToast('Training not found', 'error')
   }
 }
 
+export async function renderTrainingViewByQuery(appEl) {
+  const urlParams = new URLSearchParams(window.location.search)
+  const id = urlParams.get('id')
+  if (!id) { navigate('/training'); return }
+
+  const t = await training.getTraining(id)
+  if (t) renderTrainingView(appEl, t)
+  else {
+    showToast('Training not found', 'error')
+    navigate('/training')
+  }
+}
 export function renderCreateTraining(appEl) {
   const user = auth.getCurrentUser()
-  if (!user) { location.hash = '#/login'; return }
+  if (!user) { navigate('/login'); return }
   appEl.innerHTML = ''
 
   const form = el('div', { style: 'max-width:1000px;margin:0 auto;' },
     el('div', { class: 'section-header' },
-      el('h2', {}, 'Create New Training'),
-      el('button', { class: 'btn', onClick: () => renderTraining(appEl) }, '← Back')
+      el('button', { class: 'btn', onClick: () => navigate('/training') }, '← Back'),
+      el('h2', { style: 'margin:0; font-size:1.5rem;' }, 'Create New Training')
     ),
     el('div', { class: 'card', style: 'margin-bottom:1.5rem;' },
       el('div', { class: 'form-row' },
@@ -705,9 +792,9 @@ export function renderCreateTraining(appEl) {
       ),
       el('div', { id: 'blocks-container', style: 'min-height:200px;' })
     ),
-    el('div', { class: 'actions' },
+    el('div', { class: 'actions', style: 'margin-top:2rem;' },
       el('button', { class: 'btn btn-large primary', onClick: onSubmit }, 'Create Training'),
-      el('button', { class: 'btn btn-large', onClick: () => renderTraining(appEl) }, 'Cancel')
+      el('button', { class: 'btn btn-large', onClick: () => navigate('/training') }, 'Cancel')
     )
   )
 
@@ -1140,7 +1227,7 @@ export function renderCreateTraining(appEl) {
 
     if (res.ok) {
       showToast('Training created successfully!', 'success')
-      renderTraining(appEl)
+      navigate('/training')
     } else {
       showToast(res.error || 'Failed to create training', 'error')
     }
@@ -1152,11 +1239,11 @@ export function renderCreateTraining(appEl) {
 
 export function renderTrainingView(appEl, trainingData) {
   const user = auth.getCurrentUser()
-  if (!user) { location.hash = '#/login'; return }
+  if (!user) { navigate('/login'); return }
   appEl.innerHTML = ''
 
   const header = el('div', { class: 'training-view-header' },
-    el('button', { class: 'btn', onClick: () => renderTraining(appEl) }, '← Back to Trainings'),
+    el('button', { class: 'btn', onClick: () => navigate('/training') }, '← Back to Trainings'),
     trainingData.thumbnail_url ? el('img', { src: trainingData.thumbnail_url, style: 'width:100%;max-width:600px;max-height:300px;object-fit:cover;border-radius:12px;margin-bottom:1.5rem;' }) : null,
     el('h1', {}, trainingData.title),
     el('p', { class: 'muted' }, trainingData.description || '')
@@ -1251,7 +1338,7 @@ function renderBlockView(block) {
 
 export async function renderRecyclingBin(appEl) {
   const user = auth.getCurrentUser()
-  if (!user) { location.hash = '#/login'; return }
+  if (!user) { navigate('/login'); return }
   appEl.innerHTML = ''
 
   const header = el('div', { class: 'training-header' },
@@ -1330,7 +1417,7 @@ export async function renderRecyclingBin(appEl) {
     const res = await training.restoreTraining(id, user.email)
     if (res.ok) {
       showToast('Training restored', 'success')
-      renderRecyclingBin(appEl)
+      navigate('/recycling-bin')
     } else {
       showToast(res.error || 'Failed to restore', 'error')
     }
@@ -1341,7 +1428,7 @@ export async function renderRecyclingBin(appEl) {
     const res = await training.permanentDeleteTraining(id, user.email)
     if (res.ok) {
       showToast('Training permanently deleted', 'success')
-      renderRecyclingBin(appEl)
+      navigate('/recycling-bin')
     } else {
       showToast(res.error || 'Failed to delete', 'error')
     }
@@ -1366,7 +1453,7 @@ export async function renderRecyclingBin(appEl) {
 
     if (res.ok) {
       showToast('Item restored', 'success')
-      renderRecyclingBin(appEl)
+      navigate('/recycling-bin')
     } else {
       showToast(res.error || 'Failed to restore', 'error')
     }
@@ -1387,7 +1474,7 @@ export async function renderRecyclingBin(appEl) {
 
     if (res.ok) {
       showToast('Item permanently deleted', 'success')
-      renderRecyclingBin(appEl)
+      navigate('/recycling-bin')
     } else {
       showToast(res.error || 'Failed to delete', 'error')
     }
@@ -1396,7 +1483,7 @@ export async function renderRecyclingBin(appEl) {
 
 export function renderTrainingModules(appEl) {
   const user = auth.getCurrentUser()
-  if (!user) { location.hash = '#/login'; return }
+  if (!user) { navigate('/login'); return }
   appEl.innerHTML = ''
 
   const header = el('div', { class: 'modules-header' },
@@ -1432,7 +1519,7 @@ export function renderTrainingModules(appEl) {
 
 export function renderVideos(appEl) {
   const user = auth.getCurrentUser()
-  if (!user) { location.hash = '#/login'; return }
+  if (!user) { navigate('/login'); return }
   appEl.innerHTML = ''
 
   const header = el('div', { class: 'videos-header' },

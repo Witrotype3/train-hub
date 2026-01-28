@@ -5,13 +5,13 @@ export const STORAGE_KEYS = {
 }
 
 export const ROUTES = {
-  HOME: '#/',
-  LOGIN: '#/login',
-  SIGNUP: '#/signup',
-  INVENTORY: '#/inventory',
-  TRAINING: '#/training',
-  TRAINING_MODULES: '#/training/modules',
-  TRAINING_VIDEOS: '#/training/videos',
+  HOME: '/',
+  LOGIN: '/login',
+  SIGNUP: '/signup',
+  INVENTORY: '/inventory',
+  TRAINING: '/training',
+  TRAINING_MODULES: '/training/modules',
+  TRAINING_VIDEOS: '/training/videos',
 }
 
 export const API_ENDPOINTS = {
