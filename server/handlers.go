@@ -31,9 +31,9 @@ type LoginRequest struct {
 
 // UserUpdateRequest represents the user update request payload
 type UserUpdateRequest struct {
-	Email            string   `json:"email"`
-	Inventory        []string `json:"inventory,omitempty"`
-	DeletedInventory []string `json:"deleted_inventory,omitempty"`
+	Email            string          `json:"email"`
+	Inventory        []InventoryItem `json:"inventory,omitempty"`
+	DeletedInventory []InventoryItem `json:"deleted_inventory,omitempty"`
 }
 
 // Handlers contains all HTTP handlers
@@ -85,13 +85,13 @@ func (h *Handlers) HandleSignup(w http.ResponseWriter, r *http.Request) {
 
 	// Create user
 	user := User{
-		Name:            name,
-		Email:           email,
-		HashedPassword:  string(hashed),
-		Inventory:       []string{},
-		DeletedInventory: []string{},
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+		Name:             name,
+		Email:            email,
+		HashedPassword:   string(hashed),
+		Inventory:        []InventoryItem{},
+		DeletedInventory: []InventoryItem{},
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
 	if err := h.store.put(user); err != nil {
@@ -235,3 +235,33 @@ func (h *Handlers) HandleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, map[string]interface{}{"ok": true})
 }
 
+// HandleGetAllInventories handles getting all users' inventories
+func (h *Handlers) HandleGetAllInventories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	users := h.store.getAllUsers()
+
+	// Create response with only necessary fields (no passwords)
+	type UserInventoryInfo struct {
+		Name      string          `json:"name"`
+		Email     string          `json:"email"`
+		Inventory []InventoryItem `json:"inventory"`
+	}
+
+	inventories := make([]UserInventoryInfo, 0, len(users))
+	for _, u := range users {
+		inventories = append(inventories, UserInventoryInfo{
+			Name:      u.Name,
+			Email:     u.Email,
+			Inventory: u.Inventory,
+		})
+	}
+
+	respondJSON(w, map[string]interface{}{
+		"ok":          true,
+		"inventories": inventories,
+	})
+}

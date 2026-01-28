@@ -77,3 +77,15 @@ export async function saveUserData(user){
     return {ok:false, error: handleError(e, 'save user data')}
   }
 }
+
+export async function getAllInventories(){
+  try{
+    const res = await apiGet('/users/inventories')
+    if(res && res.ok) return res.inventories || []
+    return []
+  }catch(e){
+    console.error('getAllInventories error', e)
+    return []
+  }
+}
+

@@ -10,14 +10,22 @@ import (
 	"time"
 )
 
+type InventoryItem struct {
+	Description    string `json:"description"`
+	UPC            string `json:"upc"`
+	Number         string `json:"number"`
+	Quantity       int    `json:"quantity"`
+	TargetQuantity int    `json:"target_quantity"`
+}
+
 type User struct {
-	Name            string    `json:"name"`
-	Email           string    `json:"email"`
-	HashedPassword  string    `json:"hashed_password"`
-	Inventory       []string  `json:"inventory"`
-	DeletedInventory []string `json:"deleted_inventory,omitempty"`
-	CreatedAt       time.Time `json:"created_at,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at,omitempty"`
+	Name             string          `json:"name"`
+	Email            string          `json:"email"`
+	HashedPassword   string          `json:"hashed_password"`
+	Inventory        []InventoryItem `json:"inventory"`
+	DeletedInventory []InventoryItem `json:"deleted_inventory,omitempty"`
+	CreatedAt        time.Time       `json:"created_at,omitempty"`
+	UpdatedAt        time.Time       `json:"updated_at,omitempty"`
 }
 
 type UserStore struct {
@@ -70,6 +78,16 @@ func (s *UserStore) put(u User) error {
 	return s.save()
 }
 
+func (s *UserStore) getAllUsers() []User {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	users := make([]User, 0, len(s.Users))
+	for _, u := range s.Users {
+		users = append(users, u)
+	}
+	return users
+}
+
 func main() {
 	// Serve static files from the client directory
 	http.Handle("/", http.FileServer(http.Dir(filepath.Join(getCurrentDir(), "../client"))))
@@ -105,6 +123,12 @@ func main() {
 				respondError(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},
+		corsMiddleware,
+		loggingMiddleware,
+	))
+
+	http.HandleFunc("/api/users/inventories", chainMiddleware(
+		handlers.HandleGetAllInventories,
 		corsMiddleware,
 		loggingMiddleware,
 	))
@@ -188,7 +212,7 @@ func main() {
 	// Start the server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "3000" // Default to 3000 for production
+		port = "443" // Default to 443 for production
 	}
 	port = ":" + port
 	log.Printf("Server running on http://localhost%s", port)

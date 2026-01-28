@@ -99,9 +99,9 @@ To run the server in the background and keep it running after you disconnect:
 
 - **"Permission denied"**: Run `chmod +x train-hub` to make it executable
 - **"go: no go files listed"**: Make sure you're using `go run .` (with the dot) not just `go run`
-- **Port already in use**: Kill the process using port 3000:
+- **Port already in use**: Kill the process using port 443:
   ```bash
-  lsof -ti:3000 | xargs kill -9
+  lsof -ti:443 | xargs kill -9
   ```
 - **Repository already exists**: Use `git pull` instead of `git clone`:
   ```bash
@@ -112,19 +112,19 @@ To run the server in the background and keep it running after you disconnect:
 ### Accessing the Application
 
 Once running, access it at:
-- `http://localhost:3000` (local)
+- `http://localhost:443` (local)
 - `https://buildingforward.227family.org` (production)
 
-The server runs on port 3000 by default (configurable via PORT environment variable).
+The server runs on port 443 by default (configurable via PORT environment variable).
 
-Make sure port 3000 is open in your firewall:
+Make sure port 443 is open in your firewall:
 ```bash
-sudo ufw allow 3000
+sudo ufw allow 443
 ```
 
 ### Production Setup with Reverse Proxy
 
-If you're using a reverse proxy (nginx, Apache, etc.) to serve on `https://buildingforward.227family.org`, configure it to proxy to `http://localhost:3000`.
+If you're using a reverse proxy (nginx, Apache, etc.) to serve on `https://buildingforward.227family.org`, configure it to proxy to `http://localhost:443`.
 
 Example nginx configuration:
 ```nginx
@@ -133,7 +133,7 @@ server {
     server_name buildingforward.227family.org;
     
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:443;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
