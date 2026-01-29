@@ -7,83 +7,98 @@ import { handleError } from './utils.js'
 
 const CURRENT_KEY = STORAGE_KEYS.CURRENT_USER
 
-export function getCurrentUser(){
-  try{ return JSON.parse(localStorage.getItem(CURRENT_KEY)) }catch(e){return null}
+export function getCurrentUser() {
+  try { return JSON.parse(localStorage.getItem(CURRENT_KEY)) } catch (e) { return null }
 }
 
-export function setCurrentUser(user){
+export function setCurrentUser(user) {
   localStorage.setItem(CURRENT_KEY, JSON.stringify(user))
 }
 
-export function logout(){
+export function logout() {
   localStorage.removeItem(CURRENT_KEY)
 }
 
-export async function signup({name,email,password}){
-  try{
-    const res = await apiPost('/signup', {name,email,password})
-    if(res && res.ok){
-      setCurrentUser({name:res.user.name,email:res.user.email})
-      return {ok:true, user:res.user}
+export async function signup({ name, email, password }) {
+  try {
+    const res = await apiPost('/signup', { name, email, password })
+    if (res && res.ok) {
+      setCurrentUser({ name: res.user.name, email: res.user.email })
+      return { ok: true, user: res.user }
     }
-    return {ok:false, error: res && res.error ? res.error : 'signup failed'}
-  }catch(e){
-    return {ok:false, error: handleError(e, 'signup')}
+    return { ok: false, error: res && res.error ? res.error : 'signup failed' }
+  } catch (e) {
+    return { ok: false, error: handleError(e, 'signup') }
   }
 }
 
-export async function login(email,password){
-  try{
-    const res = await apiPost('/login', {email,password})
-    if(res && res.ok){
-      setCurrentUser({name:res.user.name,email:res.user.email})
-      return {ok:true, user:res.user}
+export async function login(email, password) {
+  try {
+    const res = await apiPost('/login', { email, password })
+    if (res && res.ok) {
+      setCurrentUser({ name: res.user.name, email: res.user.email })
+      return { ok: true, user: res.user }
     }
-    return {ok:false, error: res && res.error ? res.error : 'login failed'}
-  }catch(e){
-    return {ok:false, error: handleError(e, 'login')}
+    return { ok: false, error: res && res.error ? res.error : 'login failed' }
+  } catch (e) {
+    return { ok: false, error: handleError(e, 'login') }
   }
 }
 
-export async function getUserData(email){
-  const key = (email||'').toLowerCase().trim()
-  if(!key) return null
-  try{
-    const res = await apiGet('/user', {email: key})
-    if(res && res.ok) return {
+export async function getUserData(email) {
+  const key = (email || '').toLowerCase().trim()
+  if (!key) return null
+  try {
+    const res = await apiGet('/user', { email: key })
+    if (res && res.ok) return {
       name: res.user.name,
       email: res.user.email,
       inventory: res.user.inventory || [],
       deleted_inventory: res.user.deleted_inventory || []
     }
     return null
-  }catch(e){
+  } catch (e) {
     console.error('getUserData error', e)
     return null
   }
 }
 
-export async function saveUserData(user){
+export async function saveUserData(user) {
   const key = (user && user.email) || ''
-  if(!key) return {ok:false}
-  try{
-    const payload = {email:key}
-    if(user.inventory !== undefined) payload.inventory = user.inventory || []
-    if(user.deleted_inventory !== undefined) payload.deleted_inventory = user.deleted_inventory || []
+  if (!key) return { ok: false }
+  try {
+    const payload = { email: key }
+    if (user.inventory !== undefined) payload.inventory = user.inventory || []
+    if (user.deleted_inventory !== undefined) payload.deleted_inventory = user.deleted_inventory || []
     const res = await apiPost('/user', payload)
     return res
-  }catch(e){
+  } catch (e) {
     console.error('saveUserData error', e)
-    return {ok:false, error: handleError(e, 'save user data')}
+    return { ok: false, error: handleError(e, 'save user data') }
   }
 }
 
-export async function getAllInventories(){
-  try{
+export async function deleteAccount(password) {
+  const user = getCurrentUser()
+  if (!user) return { ok: false, error: 'Not logged in' }
+  try {
+    const res = await apiPost('/user/delete', { email: user.email, password })
+    if (res && res.ok) {
+      logout()
+    }
+    return res
+  } catch (e) {
+    console.error('deleteAccount error', e)
+    return { ok: false, error: handleError(e, 'delete account') }
+  }
+}
+
+export async function getAllInventories() {
+  try {
     const res = await apiGet('/users/inventories')
-    if(res && res.ok) return res.inventories || []
+    if (res && res.ok) return res.inventories || []
     return []
-  }catch(e){
+  } catch (e) {
     console.error('getAllInventories error', e)
     return []
   }

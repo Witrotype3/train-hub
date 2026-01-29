@@ -177,9 +177,10 @@ func (h *Handlers) HandleGetUser(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, map[string]interface{}{
 		"ok": true,
 		"user": map[string]interface{}{
-			"name":      u.Name,
-			"email":     u.Email,
-			"inventory": u.Inventory,
+			"name":              u.Name,
+			"email":             u.Email,
+			"inventory":         u.Inventory,
+			"deleted_inventory": u.DeletedInventory,
 		},
 	})
 }
@@ -304,4 +305,49 @@ func (h *Handlers) HandleBarcodeLookup(w http.ResponseWriter, r *http.Request) {
 		"model":       product.Model,
 		"category":    product.Category,
 	})
+}
+
+// HandleDeleteUser handles permanent account deletion
+func (h *Handlers) HandleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" {
+		respondJSON(w, map[string]interface{}{"ok": false, "error": "email required"})
+		return
+	}
+
+	// Get user
+	u, ok := h.store.get(email)
+	if !ok {
+		respondJSON(w, map[string]interface{}{"ok": false, "error": "user not found"})
+		return
+	}
+
+	// Verify password before deletion
+	if err := bcrypt.CompareHashAndPassword([]byte(u.HashedPassword), []byte(req.Password)); err != nil {
+		respondJSON(w, map[string]interface{}{"ok": false, "error": "invalid password. account deletion requires verification."})
+		return
+	}
+
+	// Perform deletion
+	if err := h.store.Delete(email); err != nil {
+		logError("failed to delete user", err)
+		respondJSON(w, map[string]interface{}{"ok": false, "error": "failed to delete account"})
+		return
+	}
+
+	respondJSON(w, map[string]interface{}{"ok": true})
 }

@@ -595,7 +595,7 @@ export async function renderInventory(appEl) {
     document.getElementById('item-description').focus()
 
     showToast('Item added successfully', 'success')
-    navigate('/inventory')
+    navigate('/inventory', true)
   }
 
 
@@ -623,7 +623,7 @@ export async function renderInventory(appEl) {
       deleted_inventory: data.deleted_inventory
     })
     showToast('Item moved to recycling bin', 'success')
-    navigate('/inventory')
+    navigate('/inventory', true)
   }
 
   async function restoreItem(idx) {
@@ -650,45 +650,63 @@ export async function renderInventory(appEl) {
       inventory: data.inventory,
       deleted_inventory: data.deleted_inventory
     })
-    showToast('Item restored successfully', 'success')
-    navigate('/inventory')
+    showToast('Item restored', 'success')
+    navigate('/inventory', true)
   }
 
   function renderRecyclingBin() {
     const hasItems = data.deleted_inventory && data.deleted_inventory.length > 0
+    let isExpanded = false
 
-    return el('div', { class: 'recycling-bin-section', style: 'margin-top:3rem; padding-top:2rem; border-top:1px dashed var(--border);' },
-      el('div', { class: 'section-header', style: 'margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;' },
-        el('span', { style: 'font-size:1.5rem;' }, '♻️'),
-        el('h2', { style: 'margin:0;' }, 'Recycling Bin'),
-        hasItems ? el('span', { class: 'badge muted' }, `${data.deleted_inventory.length} items`) : null
+    const container = el('div', { class: 'recycling-bin-section', style: 'margin-top:2rem; padding:1rem; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--card-bg);' },
+      el('div', {
+        class: 'section-header toggle-header',
+        style: 'cursor:pointer; display:flex; justify-content:space-between; align-items:center;',
+        onClick: (e) => {
+          const content = e.currentTarget.nextElementSibling
+          const arrow = e.currentTarget.querySelector('.toggle-arrow')
+          isExpanded = !isExpanded
+          content.style.display = isExpanded ? 'block' : 'none'
+          arrow.textContent = isExpanded ? '▼' : '▶'
+        }
+      },
+        el('div', { style: 'display:flex; align-items:center; gap:0.5rem;' },
+          el('span', { style: 'font-size:1.2rem;' }, '♻️'),
+          el('h3', { style: 'margin:0;' }, 'Recycling Bin'),
+          hasItems ? el('span', { class: 'badge muted' }, `${data.deleted_inventory.length}`) : null
+        ),
+        el('span', { class: 'toggle-arrow', style: 'font-size:0.8rem; color:var(--muted);' }, '▶')
       ),
-      el('p', { class: 'muted', style: 'margin-bottom:1.5rem;' },
-        hasItems ? 'Items deleted from your inventory appear here. You can restore them anytime.' : 'Your recycling bin is empty.'
-      ),
-      hasItems ? el('div', { class: 'inventory-table-container', style: 'opacity:0.7;' },
-        el('table', { class: 'inventory-table' },
-          el('thead', {},
-            el('tr', {},
-              el('th', {}, 'Description'),
-              el('th', {}, 'UPC'),
-              el('th', {}, 'Number'),
-              el('th', {}, 'Actions')
-            )
-          ),
-          el('tbody', {},
-            ...data.deleted_inventory.map((item, idx) => el('tr', {},
-              el('td', {}, item.description || ''),
-              el('td', {}, item.upc || ''),
-              el('td', {}, item.number || ''),
-              el('td', { class: 'item-actions' },
-                el('button', { class: 'btn small primary', onClick: () => restoreItem(idx) }, 'Restore')
+      el('div', { class: 'toggle-content', style: 'display:none; margin-top:1.5rem;' },
+        el('p', { class: 'muted small', style: 'margin-bottom:1rem;' },
+          hasItems ? 'Items deleted from your inventory appear here. You can restore them anytime.' : 'Your recycling bin is empty.'
+        ),
+        hasItems ? el('div', { class: 'inventory-table-container', style: 'opacity:0.8;' },
+          el('table', { class: 'inventory-table' },
+            el('thead', {},
+              el('tr', {},
+                el('th', {}, 'Description'),
+                el('th', {}, 'UPC'),
+                el('th', {}, 'Number'),
+                el('th', {}, 'Actions')
               )
-            ))
+            ),
+            el('tbody', {},
+              ...data.deleted_inventory.map((item, idx) => el('tr', {},
+                el('td', {}, item.description || ''),
+                el('td', {}, item.upc || ''),
+                el('td', {}, item.number || ''),
+                el('td', { class: 'item-actions' },
+                  el('button', { class: 'btn small primary', onClick: () => restoreItem(idx) }, 'Restore')
+                )
+              ))
+            )
           )
-        )
-      ) : null
+        ) : null
+      )
     )
+
+    return container
   }
 
   function renderHistorySection() {
@@ -701,107 +719,110 @@ export async function renderInventory(appEl) {
         }
       })
     }
-    if (data.deleted_inventory) {
-      data.deleted_inventory.forEach(item => {
-        if (item.history && Array.isArray(item.history)) {
-          allHistory.push(...item.history)
-        }
-      })
-    }
 
-    // Sort by timestamp (newest first)
+    // Sort by timestamp descending
     allHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
 
-    // Default to last 30 days for stats
+    const stats = calculateHistoryStats(allHistory)
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-    // Calculate statistics
-    const stats = calculateHistoryStats(allHistory)
     const usageStats = calculateUsageStats(allHistory, thirtyDaysAgo)
-
     const hasHistory = allHistory.length > 0
 
-    return el('div', { class: 'history-section', id: 'history-section', style: 'margin-top:3rem; padding-top:2rem; border-top:1px dashed var(--border);' },
-      el('div', { class: 'section-header', style: 'margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; justify-content:space-between;' },
+    let isExpanded = false
+
+    const container = el('div', { class: 'history-section', style: 'margin-top:2rem; padding:1rem; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--card-bg);' },
+      el('div', {
+        class: 'section-header toggle-header',
+        style: 'cursor:pointer; display:flex; justify-content:space-between; align-items:center;',
+        onClick: (e) => {
+          const content = e.currentTarget.nextElementSibling
+          const arrow = e.currentTarget.querySelector('.toggle-arrow')
+          isExpanded = !isExpanded
+          content.style.display = isExpanded ? 'block' : 'none'
+          arrow.textContent = isExpanded ? '▼' : '▶'
+        }
+      },
         el('div', { style: 'display:flex; align-items:center; gap:0.5rem;' },
-          el('span', { style: 'font-size:1.5rem;' }, '📊'),
-          el('h2', { style: 'margin:0;' }, 'Inventory History & Analytics'),
-          hasHistory ? el('span', { class: 'badge muted' }, `${allHistory.length} events`) : null
+          el('span', { style: 'font-size:1.2rem;' }, '📅'),
+          el('h3', { style: 'margin:0;' }, 'Inventory History'),
+          hasHistory ? el('span', { class: 'badge muted' }, `${allHistory.length}`) : null
         ),
-        el('div', { class: 'history-filters', style: 'display:flex; gap:0.5rem;' },
-          el('button', { class: 'btn btn-small', onClick: () => filterHistory('all') }, 'All Activity'),
-          el('button', { class: 'btn btn-small', onClick: () => filterHistory('usage') }, 'Usage Only')
-        )
+        el('span', { class: 'toggle-arrow', style: 'font-size:0.8rem; color:var(--muted);' }, '▶')
       ),
-      el('p', { class: 'muted', style: 'margin-bottom:1.5rem;' },
-        hasHistory ? 'Track all changes to your inventory over time and view usage statistics.' : 'No history available yet. Start adding and managing items to see your history.'
-      ),
+      el('div', { class: 'toggle-content', style: 'display:none; margin-top:1.5rem;' },
+        el('div', { class: 'history-dashboard', style: 'display:flex; flex-direction:column; gap:2rem;' },
+          el('div', { class: 'history-header-actions', style: 'display:flex; justify-content:space-between; align-items:center;' },
+            el('p', { class: 'muted small', style: 'margin:0;' }, 'Track stock changes and analyze usage patterns over time'),
+            el('div', { class: 'history-filters', style: 'display:flex; gap:0.5rem;' },
+              el('button', { class: 'btn btn-small', onClick: () => filterHistory('all') }, 'All Activity'),
+              el('button', { class: 'btn btn-small', onClick: () => filterHistory('usage') }, 'Usage Only')
+            )
+          ),
 
-      // Usage Analytics Card
-      hasHistory ? el('div', { class: 'card', style: 'margin-bottom:2rem; background: var(--bg-alt, #f8f9fa); border: 1px solid var(--border); border-radius:12px;' },
-        el('h3', { style: 'margin-top:0; color: var(--primary); font-size:1.1rem;' }, '📈 Top Usage (Last 30 Days)'),
-        el('p', { class: 'muted small' }, 'Items with highest consumption (measured by quantity decreases).'),
-        el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:1rem; margin-top:1rem;' },
-          ...usageStats.map(u => el('div', { style: 'padding:1rem; background:white; border-radius:8px; border:1px solid var(--border-light);' },
-            el('div', { style: 'font-size:0.8rem; font-weight:bold; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;', title: u.description }, u.description),
-            el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--primary); margin:0.25rem 0;' }, `${u.usage}`),
-            el('div', { class: 'muted tiny', style: 'text-transform:uppercase; letter-spacing:0.5px;' }, 'Units Used')
-          ))
-        ),
-        usageStats.length === 0 ? el('p', { class: 'muted small', style: 'text-align:center; padding:1.5rem; background:white; border-radius:8px; border:1px dashed var(--border);' }, 'No usage data recorded in the last 30 days.') : null
-      ) : null,
+          // Analytics and Cards
+          hasHistory ? el('div', { style: 'display:grid; grid-template-columns: 1fr 2fr; gap:2rem;' },
+            el('div', { class: 'history-stats-column' },
+              el('div', { style: 'display:grid; grid-template-columns: 1fr 1fr; gap:1rem;' },
+                el('div', { class: 'card-stat', style: 'padding:1rem; text-align:center; border:1px solid var(--border-light); border-radius:8px;' },
+                  el('div', { style: 'font-size:1.5rem; font-weight:bold; color:var(--primary);' }, String(stats.totalAdded)),
+                  el('div', { class: 'muted tiny' }, 'Added')
+                ),
+                el('div', { class: 'card-stat', style: 'padding:1rem; text-align:center; border:1px solid var(--border-light); border-radius:8px;' },
+                  el('div', { style: 'font-size:1.5rem; font-weight:bold; color:var(--error);' }, String(stats.totalRemoved)),
+                  el('div', { class: 'muted tiny' }, 'Removed')
+                ),
+                el('div', { class: 'card-stat', style: 'padding:1rem; text-align:center; border:1px solid var(--border-light); border-radius:8px;' },
+                  el('div', { style: 'font-size:1.5rem; font-weight:bold; color:var(--warning);' }, String(stats.totalQuantityChanges)),
+                  el('div', { class: 'muted tiny' }, 'Stock')
+                ),
+                el('div', { class: 'card-stat', style: 'padding:1rem; text-align:center; border:1px solid var(--border-light); border-radius:8px;' },
+                  el('div', { style: 'font-size:1.5rem; font-weight:bold; color:var(--success);' }, String(stats.totalRestored)),
+                  el('div', { class: 'muted tiny' }, 'Restored')
+                )
+              )
+            ),
+            el('div', { class: 'usage-analytics-column' },
+              el('div', { class: 'card', style: 'padding:1rem; background: var(--bg-alt); border-radius:8px;' },
+                el('h4', { style: 'margin:0 0 1rem 0; font-size:1rem;' }, '📈 Items Used (Last 30 Days)'),
+                el('div', { style: 'display:flex; flex-wrap:wrap; gap:1rem;' },
+                  ...usageStats.map(u => el('div', { style: 'flex:1; min-width:100px; padding:0.5rem; background:white; border-radius:4px; border:1px solid var(--border-light);' },
+                    el('div', { style: 'font-size:0.7rem; font-weight:bold; color:var(--muted);' }, u.description),
+                    el('div', { style: 'font-size:1.2rem; font-weight:bold; color:var(--primary);' }, `${u.usage}`)
+                  ))
+                ),
+                usageStats.length === 0 ? el('p', { class: 'muted tiny' }, 'No usage data.') : null
+              )
+            )
+          ) : el('p', { class: 'muted' }, 'No activity recorded yet.'),
 
-      // Statistics cards
-      hasHistory ? el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; margin-bottom:2rem;' },
-        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
-          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--primary);' }, String(stats.totalAdded)),
-          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Items Added')
-        ),
-        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
-          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--error);' }, String(stats.totalRemoved)),
-          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Items Removed')
-        ),
-        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
-          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--warning);' }, String(stats.totalQuantityChanges)),
-          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Stock Updates')
-        ),
-        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
-          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--success);' }, String(stats.totalRestored)),
-          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Restored Items')
+          // Timeline
+          hasHistory ? el('div', { class: 'timeline-container' },
+            el('h4', { style: 'margin:0 0 1rem 0;' }, 'Recent Activity'),
+            el('div', { class: 'history-timeline', id: 'history-timeline', style: 'max-height:400px; overflow-y:auto;' },
+              ...allHistory.slice(0, 50).map(entry => renderHistoryEntry(entry))
+            )
+          ) : null
         )
-      ) : null,
-
-      // Recent history timeline
-      hasHistory ? el('div', {},
-        el('h3', { style: 'margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center;' },
-          'Recent Activity',
-          el('span', { class: 'muted small', style: 'font-weight:normal;' }, 'Showing last 50 events')
-        ),
-        el('div', { class: 'history-timeline', id: 'history-timeline', style: 'max-height:450px; overflow-y:auto; padding-right:0.5rem;' },
-          ...allHistory.slice(0, 50).map(entry => renderHistoryEntry(entry))
-        )
-      ) : null
+      )
     )
 
     function filterHistory(type) {
       const timeline = document.getElementById('history-timeline')
       if (!timeline) return
-
       timeline.innerHTML = ''
       let filtered = allHistory
       if (type === 'usage') {
         filtered = allHistory.filter(e => e.action === 'quantity_changed' && parseInt(e.new_value) < parseInt(e.old_value))
       }
-
       if (filtered.length === 0) {
-        timeline.appendChild(el('div', { class: 'empty-state small', style: 'padding:2rem;' }, 'No matching activity found.'))
+        timeline.appendChild(el('div', { style: 'padding:2rem; text-align:center;' }, 'No matching activity found.'))
       } else {
-        filtered.slice(0, 50).forEach(entry => {
-          timeline.appendChild(renderHistoryEntry(entry))
-        })
+        filtered.slice(0, 50).forEach(entry => timeline.appendChild(renderHistoryEntry(entry)))
       }
     }
+
+    return container
   }
 
   function calculateUsageStats(history, since) {
@@ -1842,4 +1863,110 @@ export function renderVideos(appEl) {
 
   appEl.appendChild(header)
   appEl.appendChild(videosGrid)
+}
+
+export async function renderProfile(appEl) {
+  const user = auth.getCurrentUser()
+  if (!user) { navigate('/login'); return }
+
+  appEl.innerHTML = ''
+
+  const header = el('div', { class: 'profile-header', style: 'margin-bottom:2rem;' },
+    el('h1', {}, 'Account Settings'),
+    el('p', { class: 'muted' }, 'Manage your account profile and security settings')
+  )
+
+  const profileCard = el('div', { class: 'card profile-info-card', style: 'margin-bottom:2rem;' },
+    el('h3', { style: 'margin-top:0;' }, 'Profile Information'),
+    el('div', { style: 'margin-bottom:1.5rem;' },
+      el('div', { class: 'form-label' }, 'Name'),
+      el('div', { style: 'font-weight:500; font-size:1.1rem;' }, user.name || 'Not set')
+    ),
+    el('div', { style: 'margin-bottom:1.5rem;' },
+      el('div', { class: 'form-label' }, 'Email Address'),
+      el('div', { style: 'font-weight:500; font-size:1.1rem; color: var(--accent);' }, user.email)
+    ),
+    el('div', { class: 'profile-actions', style: 'display:flex; gap:1rem; margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--border-light);' },
+      el('button', {
+        class: 'btn',
+        onclick: () => { auth.logout(); navigate('/login') }
+      }, '🔄 Switch Account'),
+      el('button', {
+        class: 'btn primary',
+        onclick: () => showToast('Profile updates coming soon!', 'info')
+      }, 'Edit Profile')
+    )
+  )
+
+  const deletionSection = el('div', {
+    class: 'card danger-zone',
+    style: 'margin-top:4rem; border: 1px solid var(--error); background: rgba(239, 68, 68, 0.05);'
+  },
+    el('h3', { style: 'margin-top:0; color: var(--error);' }, '⚠️ Danger Zone'),
+    el('p', { class: 'muted' }, 'Once you delete your account, there is no going back. All your inventory, history, and training data will be permanently wiped.'),
+    el('div', { style: 'margin-top:1.5rem;' },
+      el('button', {
+        class: 'btn',
+        style: 'background: var(--error); color: white; border: none;',
+        onclick: () => showDeletionDialog()
+      }, 'Delete My Account')
+    )
+  )
+
+  appEl.appendChild(header)
+  appEl.appendChild(profileCard)
+  appEl.appendChild(deletionSection)
+
+  function showDeletionDialog() {
+    const dialog = el('div', {
+      class: 'modal-overlay',
+      style: 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:1000;'
+    },
+      el('div', {
+        class: 'card',
+        style: 'width:100%; max-width:400px; padding:2rem;'
+      },
+        el('h3', { style: 'margin-top:0; color: var(--error);' }, 'Verify Deletion'),
+        el('p', {}, 'Please enter your password to confirm that you want to permanently delete your account.'),
+        el('div', { style: 'margin-top:1.5rem;' },
+          el('input', {
+            id: 'delete-confirm-password',
+            type: 'password',
+            placeholder: 'Confirm Password',
+            style: 'width:100%; padding:0.75rem; margin-bottom:1rem; border: 1px solid var(--border); border-radius:4px;'
+          }),
+          el('div', { style: 'display:flex; gap:1rem; justify-content:flex-end;' },
+            el('button', {
+              class: 'btn',
+              onclick: () => dialog.remove()
+            }, 'Cancel'),
+            el('button', {
+              class: 'btn',
+              style: 'background: var(--error); color: white; border: none;',
+              onclick: async () => {
+                const pwd = document.getElementById('delete-confirm-password').value
+                if (!pwd) { showToast('Password required'); return }
+
+                const btn = document.activeElement
+                btn.disabled = true
+                btn.textContent = 'Deleting...'
+
+                const res = await auth.deleteAccount(pwd)
+                if (res.ok) {
+                  showToast('Account successfully deleted', 'success')
+                  navigate('/signup')
+                  dialog.remove()
+                } else {
+                  showToast(res.error || 'Deletion failed', 'error')
+                  btn.disabled = false
+                  btn.textContent = 'Confirm Delete'
+                }
+              }
+            }, 'Confirm Delete')
+          )
+        )
+      )
+    )
+    document.body.appendChild(dialog)
+  }
 }

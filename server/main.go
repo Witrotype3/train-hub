@@ -91,6 +91,13 @@ func (s *UserStore) put(u User) error {
 	return s.save()
 }
 
+func (s *UserStore) Delete(email string) error {
+	s.mu.Lock()
+	delete(s.Users, email)
+	s.mu.Unlock()
+	return s.save()
+}
+
 func (s *UserStore) getAllUsers() []User {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -160,6 +167,12 @@ func main() {
 				respondError(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},
+		corsMiddleware,
+		loggingMiddleware,
+	))
+
+	http.HandleFunc("/api/user/delete", chainMiddleware(
+		handlers.HandleDeleteUser,
 		corsMiddleware,
 		loggingMiddleware,
 	))

@@ -113,6 +113,33 @@ body {
   box-shadow: var(--shadow);
 }
 
+.profile-link {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  margin: 0 8px;
+  background: var(--accent-light);
+  color: var(--accent) !important;
+  border-radius: 100px;
+  text-decoration: none !important;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.profile-link:hover {
+  background: var(--accent);
+  color: white !important;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.profile-icon {
+  font-size: 1.1rem;
+}
+
 /* Main App Container */
 .app {
   max-width: 1200px;

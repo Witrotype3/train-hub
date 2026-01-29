@@ -12,7 +12,8 @@ const routes = [
   { path: '/training/view', render: views.renderTrainingViewByQuery },
   { path: '/training/modules', render: views.renderTrainingModules },
   { path: '/training/videos', render: views.renderVideos },
-  { path: '/training', render: views.renderTraining }
+  { path: '/training', render: views.renderTraining },
+  { path: '/profile', render: views.renderProfile }
 ]
 
 function renderNav() {
@@ -34,10 +35,11 @@ function renderNav() {
     navEl.appendChild(createLink('/inventory', 'Inventory'))
     navEl.appendChild(createLink('/training', 'Training'))
 
-    const span = document.createElement('span')
-    span.textContent = '  ' + (user.name || user.email)
-    span.className = 'muted'
-    navEl.appendChild(span)
+    const profileLink = document.createElement('a')
+    profileLink.href = '/profile'
+    profileLink.className = 'profile-link'
+    profileLink.innerHTML = `<span class="profile-icon">👤</span> <span>${user.name || user.email}</span>`
+    navEl.appendChild(profileLink)
 
     const btn = document.createElement('button')
     btn.className = 'primary'

@@ -47,9 +47,11 @@ export async function onRoute() {
     window.dispatchEvent(new CustomEvent('route-changed', { detail: { path } }))
 }
 
-export function navigate(path) {
-    if (location.pathname === path) return
-    history.pushState(null, '', path)
+export function navigate(path, force = false) {
+    if (location.pathname === path && !force) return
+    if (location.pathname !== path) {
+        history.pushState(null, '', path)
+    }
     onRoute()
 }
 
