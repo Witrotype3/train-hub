@@ -27,7 +27,7 @@ async function apiRequest(endpoint, options = {}) {
 
   try {
     const response = await fetch(url, config)
-    
+
     // Check if response is JSON before parsing
     const contentType = response.headers.get('content-type')
     if (!contentType || !contentType.includes('application/json')) {
@@ -35,13 +35,13 @@ async function apiRequest(endpoint, options = {}) {
       console.error('Non-JSON response from server:', text.substring(0, 200))
       throw new Error('Server returned an invalid response. Please try again.')
     }
-    
+
     const data = await response.json()
-    
+
     if (!response.ok && !data.ok) {
       throw new Error(data.error || `HTTP ${response.status}`)
     }
-    
+
     return data
   } catch (error) {
     if (error instanceof TypeError) {
@@ -75,5 +75,17 @@ export async function apiGet(endpoint, params = {}) {
   return apiRequest(url, {
     method: 'GET',
   })
+}
+
+/**
+ * Lookup barcode product information
+ */
+export async function lookupBarcode(upc) {
+  try {
+    return await apiGet('/barcode-lookup', { upc })
+  } catch (error) {
+    console.error('Barcode lookup failed:', error)
+    return { ok: false, error: error.message }
+  }
 }
 

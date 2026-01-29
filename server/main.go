@@ -11,12 +11,24 @@ import (
 	"time"
 )
 
+type HistoryEntry struct {
+	Timestamp       time.Time `json:"timestamp"`
+	Action          string    `json:"action"` // "added", "removed", "quantity_changed", "target_changed", "restored"
+	Field           string    `json:"field,omitempty"`
+	OldValue        string    `json:"old_value,omitempty"`
+	NewValue        string    `json:"new_value,omitempty"`
+	ItemDescription string    `json:"item_description"`
+}
+
 type InventoryItem struct {
-	Description    string `json:"description"`
-	UPC            string `json:"upc"`
-	Number         string `json:"number"`
-	Quantity       int    `json:"quantity"`
-	TargetQuantity int    `json:"target_quantity"`
+	Description    string         `json:"description"`
+	UPC            string         `json:"upc"`
+	Number         string         `json:"number"`
+	Quantity       int            `json:"quantity"`
+	TargetQuantity int            `json:"target_quantity"`
+	History        []HistoryEntry `json:"history,omitempty"`
+	CreatedAt      time.Time      `json:"created_at,omitempty"`
+	UpdatedAt      time.Time      `json:"updated_at,omitempty"`
 }
 
 type User struct {
@@ -154,6 +166,12 @@ func main() {
 
 	http.HandleFunc("/api/users/inventories", chainMiddleware(
 		handlers.HandleGetAllInventories,
+		corsMiddleware,
+		loggingMiddleware,
+	))
+
+	http.HandleFunc("/api/barcode-lookup", chainMiddleware(
+		handlers.HandleBarcodeLookup,
 		corsMiddleware,
 		loggingMiddleware,
 	))

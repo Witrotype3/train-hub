@@ -1,6 +1,7 @@
 import * as auth from './auth.js'
 import * as training from './training.js'
 import { navigate } from './router.js'
+import { lookupBarcode } from './api.js'
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag)
@@ -13,7 +14,14 @@ function el(tag, attrs = {}, ...children) {
       e.addEventListener(ev, v)
     } else if (v !== null && v !== undefined) e.setAttribute(k, v)
   })
-  children.flat().forEach(c => { if (c == null) return; if (typeof c === 'string') e.appendChild(document.createTextNode(c)); else e.appendChild(c) })
+  children.flat().forEach(c => {
+    if (c == null) return
+    if (c instanceof Node) {
+      e.appendChild(c)
+    } else {
+      e.appendChild(document.createTextNode(String(c)))
+    }
+  })
   return e
 }
 
@@ -287,7 +295,13 @@ export async function renderInventory(appEl) {
       ),
       el('div', { class: 'form-row', style: 'flex:1; margin-bottom:0;' },
         el('label', { for: 'item-upc', class: 'form-label' }, 'UPC'),
-        el('input', { id: 'item-upc', placeholder: 'e.g., 123456789012', type: 'number', required: true })
+        el('input', {
+          id: 'item-upc',
+          placeholder: 'e.g., 123456789012',
+          type: 'text',
+          required: true,
+          onBlur: handleUPCLookup
+        })
       ),
       el('div', { class: 'form-row', style: 'flex:1; margin-bottom:0;' },
         el('label', { for: 'item-number', class: 'form-label' }, 'Item Number'),
@@ -365,6 +379,10 @@ export async function renderInventory(appEl) {
   const recyclingBin = renderRecyclingBin()
   appEl.appendChild(recyclingBin)
 
+  // Add History section
+  const historySection = renderHistorySection()
+  appEl.appendChild(historySection)
+
   appEl.appendChild(otherInventoriesSection)
 
   // Load other users' inventories
@@ -427,14 +445,28 @@ export async function renderInventory(appEl) {
     const saveField = async () => {
       const newValue = parseInt(input.value) || 0
       if (newValue !== currentValue) {
-        data.inventory[idx][field] = newValue
+        const item = data.inventory[idx]
+
+        // Add history entry
+        item.history = item.history || []
+        item.history.push({
+          timestamp: new Date().toISOString(),
+          action: field === 'quantity' ? 'quantity_changed' : 'target_changed',
+          item_description: item.description,
+          field: field,
+          old_value: String(currentValue),
+          new_value: String(newValue)
+        })
+
+        item[field] = newValue
+        item.updated_at = new Date().toISOString()
+
         await auth.saveUserData({ name: user.name, email: user.email, inventory: data.inventory })
         showToast(`${field.replace('_', ' ')} updated`, 'success')
 
         // Manually update "Need" calculation and UI alerts
         const row = span.closest('tr')
         if (row) {
-          const item = data.inventory[idx]
           const need = Math.max(0, (item.target_quantity || 0) - (item.quantity || 0))
 
           // Update the "Need" cell badge
@@ -473,6 +505,43 @@ export async function renderInventory(appEl) {
     input.select()
   }
 
+  async function handleUPCLookup(e) {
+    const upc = e.target.value.trim()
+    const descriptionInput = document.getElementById('item-description')
+
+    // Only lookup if UPC is provided and description is empty
+    if (!upc || descriptionInput.value.trim()) {
+      return
+    }
+
+    // Show loading state
+    const originalPlaceholder = descriptionInput.placeholder
+    descriptionInput.placeholder = '🔍 Looking up product...'
+    descriptionInput.disabled = true
+
+    try {
+      const result = await lookupBarcode(upc)
+
+      if (result.ok && result.description) {
+        descriptionInput.value = result.description
+        showToast('Product found! Description auto-filled', 'success', 2000)
+      } else {
+        // Log specifically what happened for debugging as requested by user
+        if (!result.ok) {
+          console.log(`Barcode lookup failed: ${result.error || 'Unknown error'}`)
+        } else if (!result.description) {
+          console.log(`Barcode lookup successful but no description was found for UPC: ${upc}`)
+        }
+      }
+    } catch (error) {
+      console.error('Barcode lookup error:', error)
+    } finally {
+      // Restore input state
+      descriptionInput.placeholder = originalPlaceholder
+      descriptionInput.disabled = false
+    }
+  }
+
   function filterInventory(query) {
     const q = (query || '').toLowerCase().trim()
     const rows = document.querySelectorAll('#inventory-tbody tr')
@@ -496,12 +565,23 @@ export async function renderInventory(appEl) {
     if (quantity < 0) { showToast('Quantity must be 0 or greater', 'error'); return }
 
     data.inventory = data.inventory || []
+    const now = new Date().toISOString()
     const newItem = {
       description,
       upc,
       number,
       quantity,
-      target_quantity: target
+      target_quantity: target,
+      history: [{
+        timestamp: now,
+        action: 'added',
+        item_description: description,
+        field: '',
+        old_value: '',
+        new_value: `Quantity: ${quantity}, Target: ${target}`
+      }],
+      created_at: now,
+      updated_at: now
     }
     data.inventory.push(newItem)
     await auth.saveUserData({ name: user.name, email: user.email, inventory: data.inventory })
@@ -521,6 +601,18 @@ export async function renderInventory(appEl) {
 
   async function removeItem(idx) {
     const item = data.inventory[idx]
+
+    // Add history entry for removal
+    item.history = item.history || []
+    item.history.push({
+      timestamp: new Date().toISOString(),
+      action: 'removed',
+      item_description: item.description,
+      field: '',
+      old_value: '',
+      new_value: ''
+    })
+
     data.deleted_inventory = data.deleted_inventory || []
     data.deleted_inventory.push(item)
     data.inventory.splice(idx, 1)
@@ -536,6 +628,19 @@ export async function renderInventory(appEl) {
 
   async function restoreItem(idx) {
     const item = data.deleted_inventory[idx]
+
+    // Add history entry for restoration
+    item.history = item.history || []
+    item.history.push({
+      timestamp: new Date().toISOString(),
+      action: 'restored',
+      item_description: item.description,
+      field: '',
+      old_value: '',
+      new_value: ''
+    })
+    item.updated_at = new Date().toISOString()
+
     data.inventory = data.inventory || []
     data.inventory.push(item)
     data.deleted_inventory.splice(idx, 1)
@@ -584,6 +689,194 @@ export async function renderInventory(appEl) {
         )
       ) : null
     )
+  }
+
+  function renderHistorySection() {
+    // Collect all history entries from all items
+    let allHistory = []
+    if (data.inventory) {
+      data.inventory.forEach(item => {
+        if (item.history && Array.isArray(item.history)) {
+          allHistory.push(...item.history)
+        }
+      })
+    }
+    if (data.deleted_inventory) {
+      data.deleted_inventory.forEach(item => {
+        if (item.history && Array.isArray(item.history)) {
+          allHistory.push(...item.history)
+        }
+      })
+    }
+
+    // Sort by timestamp (newest first)
+    allHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+
+    // Default to last 30 days for stats
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+    // Calculate statistics
+    const stats = calculateHistoryStats(allHistory)
+    const usageStats = calculateUsageStats(allHistory, thirtyDaysAgo)
+
+    const hasHistory = allHistory.length > 0
+
+    return el('div', { class: 'history-section', id: 'history-section', style: 'margin-top:3rem; padding-top:2rem; border-top:1px dashed var(--border);' },
+      el('div', { class: 'section-header', style: 'margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; justify-content:space-between;' },
+        el('div', { style: 'display:flex; align-items:center; gap:0.5rem;' },
+          el('span', { style: 'font-size:1.5rem;' }, '📊'),
+          el('h2', { style: 'margin:0;' }, 'Inventory History & Analytics'),
+          hasHistory ? el('span', { class: 'badge muted' }, `${allHistory.length} events`) : null
+        ),
+        el('div', { class: 'history-filters', style: 'display:flex; gap:0.5rem;' },
+          el('button', { class: 'btn btn-small', onClick: () => filterHistory('all') }, 'All Activity'),
+          el('button', { class: 'btn btn-small', onClick: () => filterHistory('usage') }, 'Usage Only')
+        )
+      ),
+      el('p', { class: 'muted', style: 'margin-bottom:1.5rem;' },
+        hasHistory ? 'Track all changes to your inventory over time and view usage statistics.' : 'No history available yet. Start adding and managing items to see your history.'
+      ),
+
+      // Usage Analytics Card
+      hasHistory ? el('div', { class: 'card', style: 'margin-bottom:2rem; background: var(--bg-alt, #f8f9fa); border: 1px solid var(--border); border-radius:12px;' },
+        el('h3', { style: 'margin-top:0; color: var(--primary); font-size:1.1rem;' }, '📈 Top Usage (Last 30 Days)'),
+        el('p', { class: 'muted small' }, 'Items with highest consumption (measured by quantity decreases).'),
+        el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:1rem; margin-top:1rem;' },
+          ...usageStats.map(u => el('div', { style: 'padding:1rem; background:white; border-radius:8px; border:1px solid var(--border-light);' },
+            el('div', { style: 'font-size:0.8rem; font-weight:bold; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;', title: u.description }, u.description),
+            el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--primary); margin:0.25rem 0;' }, `${u.usage}`),
+            el('div', { class: 'muted tiny', style: 'text-transform:uppercase; letter-spacing:0.5px;' }, 'Units Used')
+          ))
+        ),
+        usageStats.length === 0 ? el('p', { class: 'muted small', style: 'text-align:center; padding:1.5rem; background:white; border-radius:8px; border:1px dashed var(--border);' }, 'No usage data recorded in the last 30 days.') : null
+      ) : null,
+
+      // Statistics cards
+      hasHistory ? el('div', { style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; margin-bottom:2rem;' },
+        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
+          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--primary);' }, String(stats.totalAdded)),
+          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Items Added')
+        ),
+        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
+          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--error);' }, String(stats.totalRemoved)),
+          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Items Removed')
+        ),
+        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
+          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--warning);' }, String(stats.totalQuantityChanges)),
+          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Stock Updates')
+        ),
+        el('div', { class: 'card', style: 'padding:1.25rem; text-align:center; border-radius:12px;' },
+          el('div', { style: 'font-size:1.8rem; font-weight:bold; color:var(--success);' }, String(stats.totalRestored)),
+          el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, 'Restored Items')
+        )
+      ) : null,
+
+      // Recent history timeline
+      hasHistory ? el('div', {},
+        el('h3', { style: 'margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center;' },
+          'Recent Activity',
+          el('span', { class: 'muted small', style: 'font-weight:normal;' }, 'Showing last 50 events')
+        ),
+        el('div', { class: 'history-timeline', id: 'history-timeline', style: 'max-height:450px; overflow-y:auto; padding-right:0.5rem;' },
+          ...allHistory.slice(0, 50).map(entry => renderHistoryEntry(entry))
+        )
+      ) : null
+    )
+
+    function filterHistory(type) {
+      const timeline = document.getElementById('history-timeline')
+      if (!timeline) return
+
+      timeline.innerHTML = ''
+      let filtered = allHistory
+      if (type === 'usage') {
+        filtered = allHistory.filter(e => e.action === 'quantity_changed' && parseInt(e.new_value) < parseInt(e.old_value))
+      }
+
+      if (filtered.length === 0) {
+        timeline.appendChild(el('div', { class: 'empty-state small', style: 'padding:2rem;' }, 'No matching activity found.'))
+      } else {
+        filtered.slice(0, 50).forEach(entry => {
+          timeline.appendChild(renderHistoryEntry(entry))
+        })
+      }
+    }
+  }
+
+  function calculateUsageStats(history, since) {
+    const usageMap = {}
+
+    history.forEach(e => {
+      if (e.action === 'quantity_changed' && new Date(e.timestamp) >= since) {
+        const oldVal = parseInt(e.old_value) || 0
+        const newVal = parseInt(e.new_value) || 0
+        if (newVal < oldVal) {
+          const diff = oldVal - newVal
+          usageMap[e.item_description] = (usageMap[e.item_description] || 0) + diff
+        }
+      }
+    })
+
+    return Object.entries(usageMap)
+      .map(([description, usage]) => ({ description, usage }))
+      .sort((a, b) => b.usage - a.usage)
+      .slice(0, 5) // Top 5 most used
+  }
+
+  function calculateHistoryStats(history) {
+    return {
+      totalAdded: history.filter(e => e.action === 'added').length,
+      totalRemoved: history.filter(e => e.action === 'removed').length,
+      totalQuantityChanges: history.filter(e => e.action === 'quantity_changed').length,
+      totalRestored: history.filter(e => e.action === 'restored').length,
+      totalTargetChanges: history.filter(e => e.action === 'target_changed').length
+    }
+  }
+
+  function renderHistoryEntry(entry) {
+    const date = new Date(entry.timestamp)
+    const timeAgo = getTimeAgo(date)
+    const formattedDate = date.toLocaleString()
+
+    // Action icons and colors
+    const actionConfig = {
+      added: { icon: '➕', color: 'var(--success)', label: 'Added' },
+      removed: { icon: '🗑️', color: 'var(--error)', label: 'Removed' },
+      quantity_changed: { icon: '📊', color: 'var(--warning)', label: 'Quantity Changed' },
+      target_changed: { icon: '🎯', color: 'var(--info)', label: 'Target Changed' },
+      restored: { icon: '♻️', color: 'var(--success)', label: 'Restored' }
+    }
+
+    const config = actionConfig[entry.action] || { icon: '📝', color: 'var(--text)', label: entry.action }
+
+    let detailText = entry.item_description
+    if (entry.action === 'quantity_changed' || entry.action === 'target_changed') {
+      detailText += `: ${entry.old_value} → ${entry.new_value}`
+    }
+
+    return el('div', {
+      class: 'history-entry',
+      style: 'display:flex; gap:1rem; padding:0.75rem; border-left:3px solid ' + config.color + '; margin-bottom:0.5rem; background:var(--card-bg); border-radius:4px;',
+      title: formattedDate
+    },
+      el('span', { style: 'font-size:1.5rem; flex-shrink:0;' }, config.icon),
+      el('div', { style: 'flex:1;' },
+        el('div', { style: 'font-weight:500;' }, config.label),
+        el('div', { class: 'muted small' }, detailText),
+        el('div', { class: 'muted small', style: 'margin-top:0.25rem;' }, timeAgo)
+      )
+    )
+  }
+
+  function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000)
+
+    if (seconds < 60) return 'Just now'
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`
+    return date.toLocaleDateString()
   }
 
   async function loadOtherInventories() {

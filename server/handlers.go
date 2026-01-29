@@ -265,3 +265,43 @@ func (h *Handlers) HandleGetAllInventories(w http.ResponseWriter, r *http.Reques
 		"inventories": inventories,
 	})
 }
+
+// HandleBarcodeLookup handles barcode product lookup
+func (h *Handlers) HandleBarcodeLookup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	upc := strings.TrimSpace(r.URL.Query().Get("upc"))
+	if upc == "" {
+		respondJSON(w, map[string]interface{}{"ok": false, "error": "UPC required"})
+		return
+	}
+
+	// Lookup barcode
+	product, err := LookupBarcode(upc)
+	if err != nil {
+		logError("barcode lookup failed", err)
+		// Return the specific error message (e.g. "product not found", "api key missing", etc.)
+		respondJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+
+	// Build description from available fields
+	description := product.Description
+	if description == "" && product.Brand != "" {
+		description = product.Brand
+		if product.Model != "" {
+			description += " " + product.Model
+		}
+	}
+
+	respondJSON(w, map[string]interface{}{
+		"ok":          true,
+		"description": description,
+		"brand":       product.Brand,
+		"model":       product.Model,
+		"category":    product.Category,
+	})
+}
